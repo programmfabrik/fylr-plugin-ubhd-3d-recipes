@@ -1,0 +1,37 @@
+classes:
+  vector3d:
+    uploadenabledextensions:
+      - glb
+      - gltf
+      - obj
+    versions:
+      - displayname:
+          de-DE: Viewer-Modell
+          en-US: Viewer model
+        name: viewer
+        group: derived
+        extensions:
+          - glb
+          - gltf
+          - obj
+        rightsmanagement: true
+        recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:model2viewer
+        zoomable: false
+        sourceversion: ''
+        standard: false
+        watermark: false
+      - displayname:
+          de-DE: Preview
+          en-US: Preview
+        name: small
+        group: preview
+        extensions:
+          - glb
+          - gltf
+          - obj
+        rightsmanagement: true
+        recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:model2preview
+        zoomable: false
+        sourceversion: viewer
+        standard: true
+        watermark: false

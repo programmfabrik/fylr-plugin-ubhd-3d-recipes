@@ -1,0 +1,129 @@
+name: cookbook_ubhd_3d
+recipes:
+  model2viewer:
+    class: vector3d
+    produceclass: vector3d
+    extensions:
+      - glb
+      - gltf
+      - obj
+    description: convert and compress a model into the single viewer glb
+    execs:
+      - match: {}
+        service: node
+        timeoutSec: 0
+        extension: "glb"
+        commands:
+          - prog: node
+            args:
+              - "%_exec.pluginDir%/src/server/recipe/model2viewer.js"
+              - "%info.json%"
+              - "%_source.url%"
+              - type: file_in
+                file:
+                  url: "%_source.url%"
+                  name: "%_source.generatedname%"
+              - type: file_out
+                file:
+                  url: "%_target.url%"
+                  name: "model.glb"
+  obj2glb:
+    class: vector3d
+    produceclass: vector3d
+    extensions:
+      - obj
+    description: convert obj to glb
+    execs:
+      - match: {}
+        service: node
+        timeoutSec: 0
+        extension: "glb"
+        commands:
+          - prog: node
+            args:
+              - "%_exec.pluginDir%/src/server/recipe/obj2glb.js"
+              - "%info.json%"
+              - "%_source.url%"
+              - type: file_in
+                file:
+                  url: "%_source.url%"
+                  name: "%_source.generatedname%"
+              - type: file_out
+                file:
+                  url: "%_target.url%"
+                  name: "model.glb"
+  gltf2glb:
+    class: vector3d
+    produceclass: vector3d
+    extensions:
+      - gltf
+    description: convert gltf to glb
+    execs:
+      - match: {}
+        service: node
+        timeoutSec: 0
+        extension: "glb"
+        commands:
+          - prog: node
+            args:
+              - "%_exec.pluginDir%/src/server/recipe/gltf2glb.js"
+              - "%info.json%"
+              - "%_source.url%"
+              - type: file_in
+                file:
+                  url: "%_source.url%"
+                  name: "%_source.generatedname%"
+              - type: file_out
+                file:
+                  url: "%_target.url%"
+                  name: "model.glb"
+  glb2draco:
+    class: vector3d
+    produceclass: vector3d
+    extensions:
+      - glb
+    description: compress glb with Draco
+    execs:
+      - match: {}
+        service: node
+        timeoutSec: 0
+        extension: "glb"
+        commands:
+          - prog: node
+            args:
+              - "%_exec.pluginDir%/src/server/recipe/glb2draco.js"
+              - "%info.json%"
+              - "%_source.url%"
+              - type: file_in
+                file:
+                  url: "%_source.url%"
+                  name: "%_source.generatedname%"
+              - type: file_out
+                file:
+                  url: "%_target.url%"
+                  name: "model.glb"
+  model2preview:
+    class: vector3d
+    produceclass: image
+    extensions:
+      - glb
+    description: make a preview image from a glb or gltf model
+    execs:
+      - match: {}
+        service: node
+        timeoutSec: 0
+        extension: "jpg"
+        commands:
+          - prog: node
+            args:
+              - "%_exec.pluginDir%/src/server/recipe/model2preview.js"
+              - "%info.json%"
+              - "%_source.url%"
+              - type: file_in
+                file:
+                  url: "%_source.url%"
+                  name: "%_source.generatedname%"
+              - type: file_out
+                file:
+                  url: "%_target.url%"
+                  name: "output.jpg"

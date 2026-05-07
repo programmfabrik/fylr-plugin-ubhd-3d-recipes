@@ -1,0 +1,18 @@
+plugin:
+  name: fylr-plugin-ubhd-3d-recipes
+  version: 1.0.0
+  url: https://github.com/programmfabrik/fylr-plugin-ubhd-3d-recipes
+  l10n: l10n/ubhd-3d-recipes.csv
+  displayname:
+    de-DE: UBHD 3D Recipes
+    en-US: UBHD 3D Recipes
+  info:
+    de-DE: Rezepte fuer die Konvertierung von 3D-Modellen in webfaehige Derivate.
+    en-US: Recipes for converting 3D models into web-ready derivatives.
+
+base_url_prefix: "webfrontend"
+
+fas_config:
+  produce_config: fas_config/custom_produce.yml
+  cookbooks:
+    - fas_config/cookbook_3d.yml

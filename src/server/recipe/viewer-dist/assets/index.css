@@ -1,0 +1,208 @@
+*
+{
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body
+{
+    overflow: hidden;
+}
+
+.webgl
+{
+    position: fixed;
+    top: 0;
+    left: 0;
+    outline: none;
+}
+
+.ubhd-legend {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 8;
+    background: rgba(18, 18, 22, 0.68);
+    color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    padding: 8px 12px;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.35;
+    border: 1px solid rgba(255,255,255,0.08);
+    overflow: hidden;
+    background-clip: padding-box;
+    -webkit-background-clip: padding-box;
+    backdrop-filter: blur(8px) saturate(120%);
+}
+
+.ubhd-legend .legend-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #f0f0f0;
+    opacity: 0.95;
+}
+
+.ubhd-legend .legend-row {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    margin: 2px 0;
+}
+
+.ubhd-legend .legend-key {
+    min-width: 10.5ch;
+    color: #ffd27d;
+}
+
+.ubhd-legend .legend-desc {
+    color: #ffffff;
+    opacity: 0.95;
+}
+
+.ubhd-legend.size-small { font-size: 12px; padding: 6px 8px; }
+.ubhd-legend.size-medium { font-size: 14px; padding: 8px 12px; }
+.ubhd-legend.size-large { font-size: 16px; padding: 10px 14px; }
+
+.ubhd-status {
+    position: fixed;
+    top: 12px;
+    left: 16px;
+    z-index: 11;
+    display: none;
+    background: rgba(20, 20, 24, 0.72);
+    color: #f3f3f5;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.3;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+    backdrop-filter: blur(8px) saturate(115%);
+    pointer-events: none;
+}
+
+.ubhd-status[data-level="warn"] { border-color: rgba(255, 204, 128, 0.6); color: #ffe1ad; }
+.ubhd-status[data-level="error"] { border-color: rgba(255, 128, 128, 0.6); color: #ffb3b3; }
+.ubhd-status[data-level="ok"] { border-color: rgba(125, 185, 255, 0.6); color: #d5e7ff; }
+
+.ubhd-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 12;
+    width: 100%;
+    height: 4px;
+    display: none;
+    background: rgba(255,255,255,0.08);
+}
+
+.ubhd-progress .ubhd-progress-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0;
+    background: #2e7d32;
+    transition: width 180ms ease;
+}
+
+.lil-gui.ubhd-gui {
+    --gui-bg: rgba(34, 34, 40, 0.82);
+    --gui-fg: #f3f3f5;
+    --gui-muted: #b9bbbe;
+    --gui-success: rgb(248, 212, 137);
+    --gui-success-surface: rgba(248, 212, 137, 0.18);
+    --number-color: var(--gui-success);
+    --slider-knob-width: 0px;
+    --gui-border: rgba(255,255,255,0.16);
+    --gui-hover: rgba(255,255,255,0.09);
+    --gui-surface: rgba(255,255,255,0.04);
+    --gui-focus: rgba(248, 212, 137, 0.32);
+    position: fixed;
+    top: 16px;
+    right: 16px;
+}
+
+.lil-gui.ubhd-gui .title {
+    background: var(--gui-surface);
+    color: var(--gui-fg);
+    font-weight: 600;
+    border-bottom: 1px solid var(--gui-border);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+.lil-gui.ubhd-gui.root {
+    background: var(--gui-bg);
+    color: var(--gui-fg);
+    border: 1px solid var(--gui-border);
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.32);
+    backdrop-filter: blur(8px) saturate(115%);
+    overflow: hidden;
+    background-clip: padding-box;
+    -webkit-background-clip: padding-box;
+}
+
+.lil-gui.ubhd-gui .children {
+    background: transparent !important;
+}
+
+.lil-gui.ubhd-gui .controller {
+    border-top: 1px solid var(--gui-border);
+    background: transparent;
+}
+
+.lil-gui.ubhd-gui .controller:hover {
+    background: var(--gui-hover);
+}
+
+.lil-gui.ubhd-gui .name {
+    color: var(--gui-muted);
+}
+
+.lil-gui.ubhd-gui .boolean .widget input[type="checkbox"]:focus-visible,
+.lil-gui.ubhd-gui .slider .fill,
+.lil-gui.ubhd-gui .slider input[type="range"]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--gui-focus);
+}
+
+.lil-gui.ubhd-gui .slider .fill {
+    background: var(--gui-success);
+    border-right: none;
+    box-sizing: border-box;
+}
+
+.lil-gui.ubhd-gui .widget select,
+.lil-gui.ubhd-gui .widget input[type="number"],
+.lil-gui.ubhd-gui .widget input[type="text"] {
+    background: rgba(255,255,255,0.06);
+    color: var(--gui-fg);
+    border: 1px solid var(--gui-border);
+}
+
+.lil-gui.ubhd-gui .widget input[type="number"] {
+    background: var(--gui-success-surface);
+    border-color: rgba(248, 212, 137, 0.45);
+    color: #fff6df;
+}
+
+.lil-gui.ubhd-gui .button {
+    background: rgba(248, 212, 137, 0.18);
+    color: var(--gui-fg);
+    border: 1px solid var(--gui-border);
+}
+
+.lil-gui.ubhd-gui .button:hover {
+    background: rgba(248, 212, 137, 0.26);
+}
+
+@media (max-width: 480px) {
+    .ubhd-legend {
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+    }
+}
