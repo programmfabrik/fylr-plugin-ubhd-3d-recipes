@@ -42,6 +42,7 @@ async function main() {
 	const html = buildHtml(viewerAssets)
 	const pageUrl = new URL(ROOT_PAGE_URL)
 	pageUrl.searchParams.set('asset', assetUrl)
+	pageUrl.searchParams.set('mode', 'preview')
 
 	const browser = await puppeteer.launch({
 		headless: process.env.VISIBLE ? false : 'new',

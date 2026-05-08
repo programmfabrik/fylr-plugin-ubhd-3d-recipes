@@ -195,6 +195,11 @@ body
     border: 1px solid var(--gui-border);
 }
 
+.lil-gui.ubhd-gui .controller.function .name,
+.lil-gui.ubhd-gui .button .name {
+    color: #ffffff;
+}
+
 .lil-gui.ubhd-gui .button:hover {
     background: rgba(248, 212, 137, 0.26);
 }

@@ -171,6 +171,9 @@ const RED_RGTC1_Format = 36283;
 const SIGNED_RED_RGTC1_Format = 36284;
 const RED_GREEN_RGTC2_Format = 36285;
 const SIGNED_RED_GREEN_RGTC2_Format = 36286;
+const LoopOnce = 2200;
+const LoopRepeat = 2201;
+const LoopPingPong = 2202;
 const InterpolateDiscrete = 2300;
 const InterpolateLinear = 2301;
 const InterpolateSmooth = 2302;
@@ -178,6 +181,7 @@ const ZeroCurvatureEnding = 2400;
 const ZeroSlopeEnding = 2401;
 const WrapAroundEnding = 2402;
 const NormalAnimationBlendMode = 2500;
+const AdditiveAnimationBlendMode = 2501;
 const TrianglesDrawMode = 0;
 const TriangleStripDrawMode = 1;
 const TriangleFanDrawMode = 2;
@@ -20889,6 +20893,157 @@ class ImageBitmapLoader extends Loader {
     scope.manager.itemStart(url);
   }
 }
+class PropertyMixer {
+  constructor(binding, typeName, valueSize) {
+    this.binding = binding;
+    this.valueSize = valueSize;
+    let mixFunction, mixFunctionAdditive, setIdentity;
+    switch (typeName) {
+      case "quaternion":
+        mixFunction = this._slerp;
+        mixFunctionAdditive = this._slerpAdditive;
+        setIdentity = this._setAdditiveIdentityQuaternion;
+        this.buffer = new Float64Array(valueSize * 6);
+        this._workIndex = 5;
+        break;
+      case "string":
+      case "bool":
+        mixFunction = this._select;
+        mixFunctionAdditive = this._select;
+        setIdentity = this._setAdditiveIdentityOther;
+        this.buffer = new Array(valueSize * 5);
+        break;
+      default:
+        mixFunction = this._lerp;
+        mixFunctionAdditive = this._lerpAdditive;
+        setIdentity = this._setAdditiveIdentityNumeric;
+        this.buffer = new Float64Array(valueSize * 5);
+    }
+    this._mixBufferRegion = mixFunction;
+    this._mixBufferRegionAdditive = mixFunctionAdditive;
+    this._setIdentity = setIdentity;
+    this._origIndex = 3;
+    this._addIndex = 4;
+    this.cumulativeWeight = 0;
+    this.cumulativeWeightAdditive = 0;
+    this.useCount = 0;
+    this.referenceCount = 0;
+  }
+  // accumulate data in the 'incoming' region into 'accu<i>'
+  accumulate(accuIndex, weight) {
+    const buffer = this.buffer, stride = this.valueSize, offset = accuIndex * stride + stride;
+    let currentWeight = this.cumulativeWeight;
+    if (currentWeight === 0) {
+      for (let i = 0; i !== stride; ++i) {
+        buffer[offset + i] = buffer[i];
+      }
+      currentWeight = weight;
+    } else {
+      currentWeight += weight;
+      const mix = weight / currentWeight;
+      this._mixBufferRegion(buffer, offset, 0, mix, stride);
+    }
+    this.cumulativeWeight = currentWeight;
+  }
+  // accumulate data in the 'incoming' region into 'add'
+  accumulateAdditive(weight) {
+    const buffer = this.buffer, stride = this.valueSize, offset = stride * this._addIndex;
+    if (this.cumulativeWeightAdditive === 0) {
+      this._setIdentity();
+    }
+    this._mixBufferRegionAdditive(buffer, offset, 0, weight, stride);
+    this.cumulativeWeightAdditive += weight;
+  }
+  // apply the state of 'accu<i>' to the binding when accus differ
+  apply(accuIndex) {
+    const stride = this.valueSize, buffer = this.buffer, offset = accuIndex * stride + stride, weight = this.cumulativeWeight, weightAdditive = this.cumulativeWeightAdditive, binding = this.binding;
+    this.cumulativeWeight = 0;
+    this.cumulativeWeightAdditive = 0;
+    if (weight < 1) {
+      const originalValueOffset = stride * this._origIndex;
+      this._mixBufferRegion(
+        buffer,
+        offset,
+        originalValueOffset,
+        1 - weight,
+        stride
+      );
+    }
+    if (weightAdditive > 0) {
+      this._mixBufferRegionAdditive(buffer, offset, this._addIndex * stride, 1, stride);
+    }
+    for (let i = stride, e = stride + stride; i !== e; ++i) {
+      if (buffer[i] !== buffer[i + stride]) {
+        binding.setValue(buffer, offset);
+        break;
+      }
+    }
+  }
+  // remember the state of the bound property and copy it to both accus
+  saveOriginalState() {
+    const binding = this.binding;
+    const buffer = this.buffer, stride = this.valueSize, originalValueOffset = stride * this._origIndex;
+    binding.getValue(buffer, originalValueOffset);
+    for (let i = stride, e = originalValueOffset; i !== e; ++i) {
+      buffer[i] = buffer[originalValueOffset + i % stride];
+    }
+    this._setIdentity();
+    this.cumulativeWeight = 0;
+    this.cumulativeWeightAdditive = 0;
+  }
+  // apply the state previously taken via 'saveOriginalState' to the binding
+  restoreOriginalState() {
+    const originalValueOffset = this.valueSize * 3;
+    this.binding.setValue(this.buffer, originalValueOffset);
+  }
+  _setAdditiveIdentityNumeric() {
+    const startIndex = this._addIndex * this.valueSize;
+    const endIndex = startIndex + this.valueSize;
+    for (let i = startIndex; i < endIndex; i++) {
+      this.buffer[i] = 0;
+    }
+  }
+  _setAdditiveIdentityQuaternion() {
+    this._setAdditiveIdentityNumeric();
+    this.buffer[this._addIndex * this.valueSize + 3] = 1;
+  }
+  _setAdditiveIdentityOther() {
+    const startIndex = this._origIndex * this.valueSize;
+    const targetIndex = this._addIndex * this.valueSize;
+    for (let i = 0; i < this.valueSize; i++) {
+      this.buffer[targetIndex + i] = this.buffer[startIndex + i];
+    }
+  }
+  // mix functions
+  _select(buffer, dstOffset, srcOffset, t, stride) {
+    if (t >= 0.5) {
+      for (let i = 0; i !== stride; ++i) {
+        buffer[dstOffset + i] = buffer[srcOffset + i];
+      }
+    }
+  }
+  _slerp(buffer, dstOffset, srcOffset, t) {
+    Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, srcOffset, t);
+  }
+  _slerpAdditive(buffer, dstOffset, srcOffset, t, stride) {
+    const workOffset = this._workIndex * stride;
+    Quaternion.multiplyQuaternionsFlat(buffer, workOffset, buffer, dstOffset, buffer, srcOffset);
+    Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, workOffset, t);
+  }
+  _lerp(buffer, dstOffset, srcOffset, t, stride) {
+    const s = 1 - t;
+    for (let i = 0; i !== stride; ++i) {
+      const j = dstOffset + i;
+      buffer[j] = buffer[j] * s + buffer[srcOffset + i] * t;
+    }
+  }
+  _lerpAdditive(buffer, dstOffset, srcOffset, t, stride) {
+    for (let i = 0; i !== stride; ++i) {
+      const j = dstOffset + i;
+      buffer[j] = buffer[j] + buffer[srcOffset + i] * t;
+    }
+  }
+}
 const _RESERVED_CHARS_RE = "\\[\\]\\.:\\/";
 const _reservedRe = new RegExp("[" + _RESERVED_CHARS_RE + "]", "g");
 const _wordChar = "[^" + _RESERVED_CHARS_RE + "]";
@@ -21268,6 +21423,733 @@ PropertyBinding.prototype.SetterByBindingTypeAndVersioning = [
     PropertyBinding.prototype._setValue_fromArray_setMatrixWorldNeedsUpdate
   ]
 ];
+class AnimationAction {
+  constructor(mixer, clip, localRoot = null, blendMode = clip.blendMode) {
+    this._mixer = mixer;
+    this._clip = clip;
+    this._localRoot = localRoot;
+    this.blendMode = blendMode;
+    const tracks = clip.tracks, nTracks = tracks.length, interpolants = new Array(nTracks);
+    const interpolantSettings = {
+      endingStart: ZeroCurvatureEnding,
+      endingEnd: ZeroCurvatureEnding
+    };
+    for (let i = 0; i !== nTracks; ++i) {
+      const interpolant = tracks[i].createInterpolant(null);
+      interpolants[i] = interpolant;
+      interpolant.settings = interpolantSettings;
+    }
+    this._interpolantSettings = interpolantSettings;
+    this._interpolants = interpolants;
+    this._propertyBindings = new Array(nTracks);
+    this._cacheIndex = null;
+    this._byClipCacheIndex = null;
+    this._timeScaleInterpolant = null;
+    this._weightInterpolant = null;
+    this.loop = LoopRepeat;
+    this._loopCount = -1;
+    this._startTime = null;
+    this.time = 0;
+    this.timeScale = 1;
+    this._effectiveTimeScale = 1;
+    this.weight = 1;
+    this._effectiveWeight = 1;
+    this.repetitions = Infinity;
+    this.paused = false;
+    this.enabled = true;
+    this.clampWhenFinished = false;
+    this.zeroSlopeAtStart = true;
+    this.zeroSlopeAtEnd = true;
+  }
+  // State & Scheduling
+  play() {
+    this._mixer._activateAction(this);
+    return this;
+  }
+  stop() {
+    this._mixer._deactivateAction(this);
+    return this.reset();
+  }
+  reset() {
+    this.paused = false;
+    this.enabled = true;
+    this.time = 0;
+    this._loopCount = -1;
+    this._startTime = null;
+    return this.stopFading().stopWarping();
+  }
+  isRunning() {
+    return this.enabled && !this.paused && this.timeScale !== 0 && this._startTime === null && this._mixer._isActiveAction(this);
+  }
+  // return true when play has been called
+  isScheduled() {
+    return this._mixer._isActiveAction(this);
+  }
+  startAt(time) {
+    this._startTime = time;
+    return this;
+  }
+  setLoop(mode, repetitions) {
+    this.loop = mode;
+    this.repetitions = repetitions;
+    return this;
+  }
+  // Weight
+  // set the weight stopping any scheduled fading
+  // although .enabled = false yields an effective weight of zero, this
+  // method does *not* change .enabled, because it would be confusing
+  setEffectiveWeight(weight) {
+    this.weight = weight;
+    this._effectiveWeight = this.enabled ? weight : 0;
+    return this.stopFading();
+  }
+  // return the weight considering fading and .enabled
+  getEffectiveWeight() {
+    return this._effectiveWeight;
+  }
+  fadeIn(duration) {
+    return this._scheduleFading(duration, 0, 1);
+  }
+  fadeOut(duration) {
+    return this._scheduleFading(duration, 1, 0);
+  }
+  crossFadeFrom(fadeOutAction, duration, warp) {
+    fadeOutAction.fadeOut(duration);
+    this.fadeIn(duration);
+    if (warp) {
+      const fadeInDuration = this._clip.duration, fadeOutDuration = fadeOutAction._clip.duration, startEndRatio = fadeOutDuration / fadeInDuration, endStartRatio = fadeInDuration / fadeOutDuration;
+      fadeOutAction.warp(1, startEndRatio, duration);
+      this.warp(endStartRatio, 1, duration);
+    }
+    return this;
+  }
+  crossFadeTo(fadeInAction, duration, warp) {
+    return fadeInAction.crossFadeFrom(this, duration, warp);
+  }
+  stopFading() {
+    const weightInterpolant = this._weightInterpolant;
+    if (weightInterpolant !== null) {
+      this._weightInterpolant = null;
+      this._mixer._takeBackControlInterpolant(weightInterpolant);
+    }
+    return this;
+  }
+  // Time Scale Control
+  // set the time scale stopping any scheduled warping
+  // although .paused = true yields an effective time scale of zero, this
+  // method does *not* change .paused, because it would be confusing
+  setEffectiveTimeScale(timeScale) {
+    this.timeScale = timeScale;
+    this._effectiveTimeScale = this.paused ? 0 : timeScale;
+    return this.stopWarping();
+  }
+  // return the time scale considering warping and .paused
+  getEffectiveTimeScale() {
+    return this._effectiveTimeScale;
+  }
+  setDuration(duration) {
+    this.timeScale = this._clip.duration / duration;
+    return this.stopWarping();
+  }
+  syncWith(action) {
+    this.time = action.time;
+    this.timeScale = action.timeScale;
+    return this.stopWarping();
+  }
+  halt(duration) {
+    return this.warp(this._effectiveTimeScale, 0, duration);
+  }
+  warp(startTimeScale, endTimeScale, duration) {
+    const mixer = this._mixer, now = mixer.time, timeScale = this.timeScale;
+    let interpolant = this._timeScaleInterpolant;
+    if (interpolant === null) {
+      interpolant = mixer._lendControlInterpolant();
+      this._timeScaleInterpolant = interpolant;
+    }
+    const times = interpolant.parameterPositions, values = interpolant.sampleValues;
+    times[0] = now;
+    times[1] = now + duration;
+    values[0] = startTimeScale / timeScale;
+    values[1] = endTimeScale / timeScale;
+    return this;
+  }
+  stopWarping() {
+    const timeScaleInterpolant = this._timeScaleInterpolant;
+    if (timeScaleInterpolant !== null) {
+      this._timeScaleInterpolant = null;
+      this._mixer._takeBackControlInterpolant(timeScaleInterpolant);
+    }
+    return this;
+  }
+  // Object Accessors
+  getMixer() {
+    return this._mixer;
+  }
+  getClip() {
+    return this._clip;
+  }
+  getRoot() {
+    return this._localRoot || this._mixer._root;
+  }
+  // Interna
+  _update(time, deltaTime, timeDirection, accuIndex) {
+    if (!this.enabled) {
+      this._updateWeight(time);
+      return;
+    }
+    const startTime = this._startTime;
+    if (startTime !== null) {
+      const timeRunning = (time - startTime) * timeDirection;
+      if (timeRunning < 0 || timeDirection === 0) {
+        deltaTime = 0;
+      } else {
+        this._startTime = null;
+        deltaTime = timeDirection * timeRunning;
+      }
+    }
+    deltaTime *= this._updateTimeScale(time);
+    const clipTime = this._updateTime(deltaTime);
+    const weight = this._updateWeight(time);
+    if (weight > 0) {
+      const interpolants = this._interpolants;
+      const propertyMixers = this._propertyBindings;
+      switch (this.blendMode) {
+        case AdditiveAnimationBlendMode:
+          for (let j = 0, m = interpolants.length; j !== m; ++j) {
+            interpolants[j].evaluate(clipTime);
+            propertyMixers[j].accumulateAdditive(weight);
+          }
+          break;
+        case NormalAnimationBlendMode:
+        default:
+          for (let j = 0, m = interpolants.length; j !== m; ++j) {
+            interpolants[j].evaluate(clipTime);
+            propertyMixers[j].accumulate(accuIndex, weight);
+          }
+      }
+    }
+  }
+  _updateWeight(time) {
+    let weight = 0;
+    if (this.enabled) {
+      weight = this.weight;
+      const interpolant = this._weightInterpolant;
+      if (interpolant !== null) {
+        const interpolantValue = interpolant.evaluate(time)[0];
+        weight *= interpolantValue;
+        if (time > interpolant.parameterPositions[1]) {
+          this.stopFading();
+          if (interpolantValue === 0) {
+            this.enabled = false;
+          }
+        }
+      }
+    }
+    this._effectiveWeight = weight;
+    return weight;
+  }
+  _updateTimeScale(time) {
+    let timeScale = 0;
+    if (!this.paused) {
+      timeScale = this.timeScale;
+      const interpolant = this._timeScaleInterpolant;
+      if (interpolant !== null) {
+        const interpolantValue = interpolant.evaluate(time)[0];
+        timeScale *= interpolantValue;
+        if (time > interpolant.parameterPositions[1]) {
+          this.stopWarping();
+          if (timeScale === 0) {
+            this.paused = true;
+          } else {
+            this.timeScale = timeScale;
+          }
+        }
+      }
+    }
+    this._effectiveTimeScale = timeScale;
+    return timeScale;
+  }
+  _updateTime(deltaTime) {
+    const duration = this._clip.duration;
+    const loop = this.loop;
+    let time = this.time + deltaTime;
+    let loopCount = this._loopCount;
+    const pingPong = loop === LoopPingPong;
+    if (deltaTime === 0) {
+      if (loopCount === -1)
+        return time;
+      return pingPong && (loopCount & 1) === 1 ? duration - time : time;
+    }
+    if (loop === LoopOnce) {
+      if (loopCount === -1) {
+        this._loopCount = 0;
+        this._setEndings(true, true, false);
+      }
+      handle_stop: {
+        if (time >= duration) {
+          time = duration;
+        } else if (time < 0) {
+          time = 0;
+        } else {
+          this.time = time;
+          break handle_stop;
+        }
+        if (this.clampWhenFinished)
+          this.paused = true;
+        else
+          this.enabled = false;
+        this.time = time;
+        this._mixer.dispatchEvent({
+          type: "finished",
+          action: this,
+          direction: deltaTime < 0 ? -1 : 1
+        });
+      }
+    } else {
+      if (loopCount === -1) {
+        if (deltaTime >= 0) {
+          loopCount = 0;
+          this._setEndings(true, this.repetitions === 0, pingPong);
+        } else {
+          this._setEndings(this.repetitions === 0, true, pingPong);
+        }
+      }
+      if (time >= duration || time < 0) {
+        const loopDelta = Math.floor(time / duration);
+        time -= duration * loopDelta;
+        loopCount += Math.abs(loopDelta);
+        const pending = this.repetitions - loopCount;
+        if (pending <= 0) {
+          if (this.clampWhenFinished)
+            this.paused = true;
+          else
+            this.enabled = false;
+          time = deltaTime > 0 ? duration : 0;
+          this.time = time;
+          this._mixer.dispatchEvent({
+            type: "finished",
+            action: this,
+            direction: deltaTime > 0 ? 1 : -1
+          });
+        } else {
+          if (pending === 1) {
+            const atStart = deltaTime < 0;
+            this._setEndings(atStart, !atStart, pingPong);
+          } else {
+            this._setEndings(false, false, pingPong);
+          }
+          this._loopCount = loopCount;
+          this.time = time;
+          this._mixer.dispatchEvent({
+            type: "loop",
+            action: this,
+            loopDelta
+          });
+        }
+      } else {
+        this.time = time;
+      }
+      if (pingPong && (loopCount & 1) === 1) {
+        return duration - time;
+      }
+    }
+    return time;
+  }
+  _setEndings(atStart, atEnd, pingPong) {
+    const settings = this._interpolantSettings;
+    if (pingPong) {
+      settings.endingStart = ZeroSlopeEnding;
+      settings.endingEnd = ZeroSlopeEnding;
+    } else {
+      if (atStart) {
+        settings.endingStart = this.zeroSlopeAtStart ? ZeroSlopeEnding : ZeroCurvatureEnding;
+      } else {
+        settings.endingStart = WrapAroundEnding;
+      }
+      if (atEnd) {
+        settings.endingEnd = this.zeroSlopeAtEnd ? ZeroSlopeEnding : ZeroCurvatureEnding;
+      } else {
+        settings.endingEnd = WrapAroundEnding;
+      }
+    }
+  }
+  _scheduleFading(duration, weightNow, weightThen) {
+    const mixer = this._mixer, now = mixer.time;
+    let interpolant = this._weightInterpolant;
+    if (interpolant === null) {
+      interpolant = mixer._lendControlInterpolant();
+      this._weightInterpolant = interpolant;
+    }
+    const times = interpolant.parameterPositions, values = interpolant.sampleValues;
+    times[0] = now;
+    values[0] = weightNow;
+    times[1] = now + duration;
+    values[1] = weightThen;
+    return this;
+  }
+}
+const _controlInterpolantsResultBuffer = new Float32Array(1);
+class AnimationMixer extends EventDispatcher {
+  constructor(root) {
+    super();
+    this._root = root;
+    this._initMemoryManager();
+    this._accuIndex = 0;
+    this.time = 0;
+    this.timeScale = 1;
+  }
+  _bindAction(action, prototypeAction) {
+    const root = action._localRoot || this._root, tracks = action._clip.tracks, nTracks = tracks.length, bindings = action._propertyBindings, interpolants = action._interpolants, rootUuid = root.uuid, bindingsByRoot = this._bindingsByRootAndName;
+    let bindingsByName = bindingsByRoot[rootUuid];
+    if (bindingsByName === void 0) {
+      bindingsByName = {};
+      bindingsByRoot[rootUuid] = bindingsByName;
+    }
+    for (let i = 0; i !== nTracks; ++i) {
+      const track = tracks[i], trackName = track.name;
+      let binding = bindingsByName[trackName];
+      if (binding !== void 0) {
+        ++binding.referenceCount;
+        bindings[i] = binding;
+      } else {
+        binding = bindings[i];
+        if (binding !== void 0) {
+          if (binding._cacheIndex === null) {
+            ++binding.referenceCount;
+            this._addInactiveBinding(binding, rootUuid, trackName);
+          }
+          continue;
+        }
+        const path = prototypeAction && prototypeAction._propertyBindings[i].binding.parsedPath;
+        binding = new PropertyMixer(
+          PropertyBinding.create(root, trackName, path),
+          track.ValueTypeName,
+          track.getValueSize()
+        );
+        ++binding.referenceCount;
+        this._addInactiveBinding(binding, rootUuid, trackName);
+        bindings[i] = binding;
+      }
+      interpolants[i].resultBuffer = binding.buffer;
+    }
+  }
+  _activateAction(action) {
+    if (!this._isActiveAction(action)) {
+      if (action._cacheIndex === null) {
+        const rootUuid = (action._localRoot || this._root).uuid, clipUuid = action._clip.uuid, actionsForClip = this._actionsByClip[clipUuid];
+        this._bindAction(
+          action,
+          actionsForClip && actionsForClip.knownActions[0]
+        );
+        this._addInactiveAction(action, clipUuid, rootUuid);
+      }
+      const bindings = action._propertyBindings;
+      for (let i = 0, n = bindings.length; i !== n; ++i) {
+        const binding = bindings[i];
+        if (binding.useCount++ === 0) {
+          this._lendBinding(binding);
+          binding.saveOriginalState();
+        }
+      }
+      this._lendAction(action);
+    }
+  }
+  _deactivateAction(action) {
+    if (this._isActiveAction(action)) {
+      const bindings = action._propertyBindings;
+      for (let i = 0, n = bindings.length; i !== n; ++i) {
+        const binding = bindings[i];
+        if (--binding.useCount === 0) {
+          binding.restoreOriginalState();
+          this._takeBackBinding(binding);
+        }
+      }
+      this._takeBackAction(action);
+    }
+  }
+  // Memory manager
+  _initMemoryManager() {
+    this._actions = [];
+    this._nActiveActions = 0;
+    this._actionsByClip = {};
+    this._bindings = [];
+    this._nActiveBindings = 0;
+    this._bindingsByRootAndName = {};
+    this._controlInterpolants = [];
+    this._nActiveControlInterpolants = 0;
+    const scope = this;
+    this.stats = {
+      actions: {
+        get total() {
+          return scope._actions.length;
+        },
+        get inUse() {
+          return scope._nActiveActions;
+        }
+      },
+      bindings: {
+        get total() {
+          return scope._bindings.length;
+        },
+        get inUse() {
+          return scope._nActiveBindings;
+        }
+      },
+      controlInterpolants: {
+        get total() {
+          return scope._controlInterpolants.length;
+        },
+        get inUse() {
+          return scope._nActiveControlInterpolants;
+        }
+      }
+    };
+  }
+  // Memory management for AnimationAction objects
+  _isActiveAction(action) {
+    const index = action._cacheIndex;
+    return index !== null && index < this._nActiveActions;
+  }
+  _addInactiveAction(action, clipUuid, rootUuid) {
+    const actions = this._actions, actionsByClip = this._actionsByClip;
+    let actionsForClip = actionsByClip[clipUuid];
+    if (actionsForClip === void 0) {
+      actionsForClip = {
+        knownActions: [action],
+        actionByRoot: {}
+      };
+      action._byClipCacheIndex = 0;
+      actionsByClip[clipUuid] = actionsForClip;
+    } else {
+      const knownActions = actionsForClip.knownActions;
+      action._byClipCacheIndex = knownActions.length;
+      knownActions.push(action);
+    }
+    action._cacheIndex = actions.length;
+    actions.push(action);
+    actionsForClip.actionByRoot[rootUuid] = action;
+  }
+  _removeInactiveAction(action) {
+    const actions = this._actions, lastInactiveAction = actions[actions.length - 1], cacheIndex = action._cacheIndex;
+    lastInactiveAction._cacheIndex = cacheIndex;
+    actions[cacheIndex] = lastInactiveAction;
+    actions.pop();
+    action._cacheIndex = null;
+    const clipUuid = action._clip.uuid, actionsByClip = this._actionsByClip, actionsForClip = actionsByClip[clipUuid], knownActionsForClip = actionsForClip.knownActions, lastKnownAction = knownActionsForClip[knownActionsForClip.length - 1], byClipCacheIndex = action._byClipCacheIndex;
+    lastKnownAction._byClipCacheIndex = byClipCacheIndex;
+    knownActionsForClip[byClipCacheIndex] = lastKnownAction;
+    knownActionsForClip.pop();
+    action._byClipCacheIndex = null;
+    const actionByRoot = actionsForClip.actionByRoot, rootUuid = (action._localRoot || this._root).uuid;
+    delete actionByRoot[rootUuid];
+    if (knownActionsForClip.length === 0) {
+      delete actionsByClip[clipUuid];
+    }
+    this._removeInactiveBindingsForAction(action);
+  }
+  _removeInactiveBindingsForAction(action) {
+    const bindings = action._propertyBindings;
+    for (let i = 0, n = bindings.length; i !== n; ++i) {
+      const binding = bindings[i];
+      if (--binding.referenceCount === 0) {
+        this._removeInactiveBinding(binding);
+      }
+    }
+  }
+  _lendAction(action) {
+    const actions = this._actions, prevIndex = action._cacheIndex, lastActiveIndex = this._nActiveActions++, firstInactiveAction = actions[lastActiveIndex];
+    action._cacheIndex = lastActiveIndex;
+    actions[lastActiveIndex] = action;
+    firstInactiveAction._cacheIndex = prevIndex;
+    actions[prevIndex] = firstInactiveAction;
+  }
+  _takeBackAction(action) {
+    const actions = this._actions, prevIndex = action._cacheIndex, firstInactiveIndex = --this._nActiveActions, lastActiveAction = actions[firstInactiveIndex];
+    action._cacheIndex = firstInactiveIndex;
+    actions[firstInactiveIndex] = action;
+    lastActiveAction._cacheIndex = prevIndex;
+    actions[prevIndex] = lastActiveAction;
+  }
+  // Memory management for PropertyMixer objects
+  _addInactiveBinding(binding, rootUuid, trackName) {
+    const bindingsByRoot = this._bindingsByRootAndName, bindings = this._bindings;
+    let bindingByName = bindingsByRoot[rootUuid];
+    if (bindingByName === void 0) {
+      bindingByName = {};
+      bindingsByRoot[rootUuid] = bindingByName;
+    }
+    bindingByName[trackName] = binding;
+    binding._cacheIndex = bindings.length;
+    bindings.push(binding);
+  }
+  _removeInactiveBinding(binding) {
+    const bindings = this._bindings, propBinding = binding.binding, rootUuid = propBinding.rootNode.uuid, trackName = propBinding.path, bindingsByRoot = this._bindingsByRootAndName, bindingByName = bindingsByRoot[rootUuid], lastInactiveBinding = bindings[bindings.length - 1], cacheIndex = binding._cacheIndex;
+    lastInactiveBinding._cacheIndex = cacheIndex;
+    bindings[cacheIndex] = lastInactiveBinding;
+    bindings.pop();
+    delete bindingByName[trackName];
+    if (Object.keys(bindingByName).length === 0) {
+      delete bindingsByRoot[rootUuid];
+    }
+  }
+  _lendBinding(binding) {
+    const bindings = this._bindings, prevIndex = binding._cacheIndex, lastActiveIndex = this._nActiveBindings++, firstInactiveBinding = bindings[lastActiveIndex];
+    binding._cacheIndex = lastActiveIndex;
+    bindings[lastActiveIndex] = binding;
+    firstInactiveBinding._cacheIndex = prevIndex;
+    bindings[prevIndex] = firstInactiveBinding;
+  }
+  _takeBackBinding(binding) {
+    const bindings = this._bindings, prevIndex = binding._cacheIndex, firstInactiveIndex = --this._nActiveBindings, lastActiveBinding = bindings[firstInactiveIndex];
+    binding._cacheIndex = firstInactiveIndex;
+    bindings[firstInactiveIndex] = binding;
+    lastActiveBinding._cacheIndex = prevIndex;
+    bindings[prevIndex] = lastActiveBinding;
+  }
+  // Memory management of Interpolants for weight and time scale
+  _lendControlInterpolant() {
+    const interpolants = this._controlInterpolants, lastActiveIndex = this._nActiveControlInterpolants++;
+    let interpolant = interpolants[lastActiveIndex];
+    if (interpolant === void 0) {
+      interpolant = new LinearInterpolant(
+        new Float32Array(2),
+        new Float32Array(2),
+        1,
+        _controlInterpolantsResultBuffer
+      );
+      interpolant.__cacheIndex = lastActiveIndex;
+      interpolants[lastActiveIndex] = interpolant;
+    }
+    return interpolant;
+  }
+  _takeBackControlInterpolant(interpolant) {
+    const interpolants = this._controlInterpolants, prevIndex = interpolant.__cacheIndex, firstInactiveIndex = --this._nActiveControlInterpolants, lastActiveInterpolant = interpolants[firstInactiveIndex];
+    interpolant.__cacheIndex = firstInactiveIndex;
+    interpolants[firstInactiveIndex] = interpolant;
+    lastActiveInterpolant.__cacheIndex = prevIndex;
+    interpolants[prevIndex] = lastActiveInterpolant;
+  }
+  // return an action for a clip optionally using a custom root target
+  // object (this method allocates a lot of dynamic memory in case a
+  // previously unknown clip/root combination is specified)
+  clipAction(clip, optionalRoot, blendMode) {
+    const root = optionalRoot || this._root, rootUuid = root.uuid;
+    let clipObject = typeof clip === "string" ? AnimationClip.findByName(root, clip) : clip;
+    const clipUuid = clipObject !== null ? clipObject.uuid : clip;
+    const actionsForClip = this._actionsByClip[clipUuid];
+    let prototypeAction = null;
+    if (blendMode === void 0) {
+      if (clipObject !== null) {
+        blendMode = clipObject.blendMode;
+      } else {
+        blendMode = NormalAnimationBlendMode;
+      }
+    }
+    if (actionsForClip !== void 0) {
+      const existingAction = actionsForClip.actionByRoot[rootUuid];
+      if (existingAction !== void 0 && existingAction.blendMode === blendMode) {
+        return existingAction;
+      }
+      prototypeAction = actionsForClip.knownActions[0];
+      if (clipObject === null)
+        clipObject = prototypeAction._clip;
+    }
+    if (clipObject === null)
+      return null;
+    const newAction = new AnimationAction(this, clipObject, optionalRoot, blendMode);
+    this._bindAction(newAction, prototypeAction);
+    this._addInactiveAction(newAction, clipUuid, rootUuid);
+    return newAction;
+  }
+  // get an existing action
+  existingAction(clip, optionalRoot) {
+    const root = optionalRoot || this._root, rootUuid = root.uuid, clipObject = typeof clip === "string" ? AnimationClip.findByName(root, clip) : clip, clipUuid = clipObject ? clipObject.uuid : clip, actionsForClip = this._actionsByClip[clipUuid];
+    if (actionsForClip !== void 0) {
+      return actionsForClip.actionByRoot[rootUuid] || null;
+    }
+    return null;
+  }
+  // deactivates all previously scheduled actions
+  stopAllAction() {
+    const actions = this._actions, nActions = this._nActiveActions;
+    for (let i = nActions - 1; i >= 0; --i) {
+      actions[i].stop();
+    }
+    return this;
+  }
+  // advance the time and update apply the animation
+  update(deltaTime) {
+    deltaTime *= this.timeScale;
+    const actions = this._actions, nActions = this._nActiveActions, time = this.time += deltaTime, timeDirection = Math.sign(deltaTime), accuIndex = this._accuIndex ^= 1;
+    for (let i = 0; i !== nActions; ++i) {
+      const action = actions[i];
+      action._update(time, deltaTime, timeDirection, accuIndex);
+    }
+    const bindings = this._bindings, nBindings = this._nActiveBindings;
+    for (let i = 0; i !== nBindings; ++i) {
+      bindings[i].apply(accuIndex);
+    }
+    return this;
+  }
+  // Allows you to seek to a specific time in an animation.
+  setTime(timeInSeconds) {
+    this.time = 0;
+    for (let i = 0; i < this._actions.length; i++) {
+      this._actions[i].time = 0;
+    }
+    return this.update(timeInSeconds);
+  }
+  // return this mixer's root target object
+  getRoot() {
+    return this._root;
+  }
+  // free all resources specific to a particular clip
+  uncacheClip(clip) {
+    const actions = this._actions, clipUuid = clip.uuid, actionsByClip = this._actionsByClip, actionsForClip = actionsByClip[clipUuid];
+    if (actionsForClip !== void 0) {
+      const actionsToRemove = actionsForClip.knownActions;
+      for (let i = 0, n = actionsToRemove.length; i !== n; ++i) {
+        const action = actionsToRemove[i];
+        this._deactivateAction(action);
+        const cacheIndex = action._cacheIndex, lastInactiveAction = actions[actions.length - 1];
+        action._cacheIndex = null;
+        action._byClipCacheIndex = null;
+        lastInactiveAction._cacheIndex = cacheIndex;
+        actions[cacheIndex] = lastInactiveAction;
+        actions.pop();
+        this._removeInactiveBindingsForAction(action);
+      }
+      delete actionsByClip[clipUuid];
+    }
+  }
+  // free all resources specific to a particular root target object
+  uncacheRoot(root) {
+    const rootUuid = root.uuid, actionsByClip = this._actionsByClip;
+    for (const clipUuid in actionsByClip) {
+      const actionByRoot = actionsByClip[clipUuid].actionByRoot, action = actionByRoot[rootUuid];
+      if (action !== void 0) {
+        this._deactivateAction(action);
+        this._removeInactiveAction(action);
+      }
+    }
+    const bindingsByRoot = this._bindingsByRootAndName, bindingByName = bindingsByRoot[rootUuid];
+    if (bindingByName !== void 0) {
+      for (const trackName in bindingByName) {
+        const binding = bindingByName[trackName];
+        binding.restoreOriginalState();
+        this._removeInactiveBinding(binding);
+      }
+    }
+  }
+  // remove a targeted clip from the cache
+  uncacheAction(clip, optionalRoot) {
+    const action = this.existingAction(clip, optionalRoot);
+    if (action !== null) {
+      this._deactivateAction(action);
+      this._removeInactiveAction(action);
+    }
+  }
+}
 class Spherical {
   constructor(radius = 1, phi = 0, theta = 0) {
     this.radius = radius;
@@ -22250,6 +23132,18 @@ class Camera2 {
   }
   setOrbitControls() {
     this.controls = new OrbitControls(this.instance, this.canvas);
+  }
+  setControlsEnabled(isEnabled) {
+    if (!this.controls) {
+      return false;
+    }
+    this.controls.enabled = isEnabled;
+    this.canvas.style.touchAction = isEnabled ? "none" : "auto";
+    return this.controls.enabled;
+  }
+  areControlsEnabled() {
+    var _a;
+    return ((_a = this.controls) == null ? void 0 : _a.enabled) ?? false;
   }
   resize() {
     this.instance.aspect = this.sizes.width / this.sizes.height;
@@ -25420,6 +26314,15 @@ class Model extends EventEmitter {
     this.assetUrl = this.viewer.assetUrl;
     this.scene = this.viewer.scene;
     this.size = {};
+    this.animationMixer = null;
+    this.animationActions = /* @__PURE__ */ new Map();
+    this.animationNames = [];
+    this.animationState = {
+      selectedClip: null,
+      playbackSpeed: 1,
+      isPlaying: false,
+      mode: "all"
+    };
     this.setLoaders();
   }
   setLoaders() {
@@ -25445,10 +26348,152 @@ class Model extends EventEmitter {
       this.gltf = gltf;
       this.scene.add(gltf.scene);
       this.centerModel(gltf);
+      this.setAnimations(gltf);
       this.trigger("ready");
     } catch (error) {
       this.viewer.reportError("Failed to load 3D asset.", error);
     }
+  }
+  setAnimations(gltf) {
+    const animations = gltf.animations || [];
+    if (animations.length === 0) {
+      return;
+    }
+    const usedNames = /* @__PURE__ */ new Set();
+    this.animationMixer = new AnimationMixer(gltf.scene);
+    this.animationNames = animations.map((clip, index) => {
+      const clipName = this.getAnimationName(clip, index, usedNames);
+      const action = this.animationMixer.clipAction(clip);
+      this.animationActions.set(clipName, action);
+      return clipName;
+    });
+    this.animationState.selectedClip = this.animationNames[0];
+    this.playAllAnimations();
+  }
+  getAnimationName(clip, index, usedNames) {
+    const baseName = clip.name && clip.name.trim() ? clip.name.trim() : `Animation ${index + 1}`;
+    let animationName = baseName;
+    let duplicateIndex = 2;
+    while (usedNames.has(animationName)) {
+      animationName = `${baseName} (${duplicateIndex})`;
+      duplicateIndex += 1;
+    }
+    usedNames.add(animationName);
+    return animationName;
+  }
+  hasAnimations() {
+    return this.animationActions.size > 0;
+  }
+  getAnimationNames() {
+    return [...this.animationNames];
+  }
+  getSelectedAnimation() {
+    return this.animationState.selectedClip;
+  }
+  setSelectedAnimation(animationName) {
+    if (!this.animationActions.has(animationName)) {
+      return false;
+    }
+    this.animationState.selectedClip = animationName;
+    return true;
+  }
+  setPlaybackSpeed(playbackSpeed) {
+    const nextSpeed = Number(playbackSpeed);
+    if (!Number.isFinite(nextSpeed)) {
+      return this.animationState.playbackSpeed;
+    }
+    this.animationState.playbackSpeed = nextSpeed;
+    if (this.animationMixer && this.animationState.isPlaying) {
+      this.animationMixer.timeScale = nextSpeed;
+    }
+    return this.animationState.playbackSpeed;
+  }
+  getPlaybackSpeed() {
+    return this.animationState.playbackSpeed;
+  }
+  isAnimationPlaying() {
+    return this.animationState.isPlaying;
+  }
+  playAllAnimations() {
+    if (!this.hasAnimations()) {
+      return false;
+    }
+    this.stopAllAnimations();
+    for (const action of this.animationActions.values()) {
+      action.reset();
+      action.play();
+    }
+    this.animationState.mode = "all";
+    this.animationState.isPlaying = true;
+    this.animationMixer.timeScale = this.animationState.playbackSpeed;
+    return true;
+  }
+  playAnimation(animationName = this.animationState.selectedClip) {
+    const action = this.animationActions.get(animationName);
+    if (!action) {
+      return false;
+    }
+    this.stopAllAnimations();
+    action.reset();
+    action.play();
+    this.animationState.selectedClip = animationName;
+    this.animationState.mode = "single";
+    this.animationState.isPlaying = true;
+    this.animationMixer.timeScale = this.animationState.playbackSpeed;
+    return true;
+  }
+  pauseAnimations() {
+    if (!this.animationMixer) {
+      return false;
+    }
+    this.animationState.isPlaying = false;
+    this.animationMixer.timeScale = 0;
+    return true;
+  }
+  resumeAnimations() {
+    if (!this.hasAnimations()) {
+      return false;
+    }
+    if (this.animationState.mode === "single") {
+      const action = this.animationActions.get(this.animationState.selectedClip);
+      if (!action) {
+        return false;
+      }
+      action.play();
+    } else {
+      for (const action of this.animationActions.values()) {
+        action.play();
+      }
+    }
+    this.animationState.isPlaying = true;
+    this.animationMixer.timeScale = this.animationState.playbackSpeed;
+    return true;
+  }
+  toggleAnimations() {
+    if (this.animationState.isPlaying) {
+      this.pauseAnimations();
+      return false;
+    }
+    return this.resumeAnimations();
+  }
+  stopAllAnimations() {
+    if (!this.hasAnimations()) {
+      return false;
+    }
+    for (const action of this.animationActions.values()) {
+      action.stop();
+    }
+    this.animationState.isPlaying = false;
+    if (this.animationMixer) {
+      this.animationMixer.timeScale = this.animationState.playbackSpeed;
+    }
+    return true;
+  }
+  update() {
+    if (!this.animationMixer) {
+      return;
+    }
+    this.animationMixer.update(this.viewer.time.delta / 1e3);
   }
   centerModel(gltf) {
     const box = new Box3().setFromObject(gltf.scene);
@@ -28027,17 +29072,28 @@ class ControlsPanel {
     this.config = this.viewer.config;
     this.lights = this.viewer.lights;
     this.camera = this.viewer.camera;
+    this.model = this.viewer.model;
     this.createGui();
     this.addDirectionalLightGui();
     this.addAmbientLightGui();
     this.addHemisphereLightGui();
+    this.addAnimationsGui();
     this.addAutomaticZoomButton();
+    this.addNavigationToggleButton();
     this.addResetButton();
   }
   createGui() {
     this.gui = new GUI$1({ "title": "Steuerung" });
     this.gui.domElement.classList.add("ubhd-gui");
     this.gui.close();
+  }
+  setVisible(isVisible) {
+    this.gui.show(isVisible);
+    this.gui.domElement.setAttribute("aria-hidden", `${!isVisible}`);
+    return !this.gui._hidden;
+  }
+  isVisible() {
+    return !this.gui._hidden;
   }
   addDirectionalLightGui() {
     this.directionalLight = this.gui.addFolder("DirectionalLight");
@@ -28057,6 +29113,65 @@ class ControlsPanel {
     this.hemisphereLight.close();
     this.hemisphereLight.add(this.lights.hemisphere, "intensity").min(this.config.gui.lights.hemisphere.intensity.min).max(this.config.gui.lights.hemisphere.intensity.max).step(this.config.gui.lights.hemisphere.intensity.step);
   }
+  addAnimationsGui() {
+    var _a;
+    if (!this.model.hasAnimations()) {
+      return;
+    }
+    const playbackSpeedConfig = ((_a = this.config.gui.animations) == null ? void 0 : _a.playbackSpeed) || {
+      min: 0,
+      max: 3,
+      step: 0.05
+    };
+    this.animationSettings = {
+      playbackSpeed: this.viewer.getAnimationPlaybackSpeed(),
+      selectedClip: this.viewer.getSelectedAnimation(),
+      playPause: () => {
+        this.viewer.toggleAnimations();
+        this.syncAnimationControls();
+      },
+      playSelected: () => {
+        this.viewer.playAnimation(this.animationSettings.selectedClip);
+        this.syncAnimationControls();
+      },
+      playAll: () => {
+        this.viewer.playAllAnimations();
+        this.syncAnimationControls();
+      },
+      stop: () => {
+        this.viewer.stopAnimations();
+        this.syncAnimationControls();
+      }
+    };
+    this.animations = this.gui.addFolder("Animations");
+    this.animations.close();
+    this.animationSelect = this.animations.add(this.animationSettings, "selectedClip", this.viewer.getAnimationNames()).name("Clip").onChange((animationName) => {
+      this.viewer.setSelectedAnimation(animationName);
+    });
+    this.playPauseButton = this.animations.add(this.animationSettings, "playPause");
+    this.animations.add(this.animationSettings, "playSelected").name("Play selected");
+    this.animations.add(this.animationSettings, "playAll").name("Play all");
+    this.animations.add(this.animationSettings, "stop").name("Stop");
+    this.playbackSpeed = this.animations.add(this.animationSettings, "playbackSpeed").min(playbackSpeedConfig.min).max(playbackSpeedConfig.max).step(playbackSpeedConfig.step).name("Playback speed").onChange((value) => {
+      this.animationSettings.playbackSpeed = this.viewer.setAnimationPlaybackSpeed(value);
+      this.playbackSpeed.updateDisplay();
+    });
+    this.syncAnimationControls();
+  }
+  syncAnimationControls() {
+    if (!this.playPauseButton) {
+      return;
+    }
+    this.animationSettings.selectedClip = this.viewer.getSelectedAnimation();
+    this.animationSettings.playbackSpeed = this.viewer.getAnimationPlaybackSpeed();
+    this.playPauseButton.name(this.viewer.isAnimationPlaying() ? "Pause" : "Play");
+    if (this.animationSelect) {
+      this.animationSelect.updateDisplay();
+    }
+    if (this.playbackSpeed) {
+      this.playbackSpeed.updateDisplay();
+    }
+  }
   addResetButton() {
     let obj = {
       Reset: () => {
@@ -28065,6 +29180,22 @@ class ControlsPanel {
       }
     };
     this.gui.add(obj, "Reset");
+  }
+  addNavigationToggleButton() {
+    let obj = {
+      ToggleNavigation: () => {
+        this.viewer.toggleNavigationVisibility();
+        this.updateNavigationToggleLabel();
+      }
+    };
+    this.navigationToggleButton = this.gui.add(obj, "ToggleNavigation");
+    this.updateNavigationToggleLabel();
+  }
+  updateNavigationToggleLabel() {
+    if (!this.navigationToggleButton) {
+      return;
+    }
+    this.navigationToggleButton.name(this.viewer.isNavigationVisible() ? "Hide navigation" : "Show navigation");
   }
   addAutomaticZoomButton() {
     let obj = {
@@ -28200,6 +29331,9 @@ class UBHD3DViewer {
       assetUrl = null,
       configFilePath = null,
       dracoDecoderPath = "/draco/",
+      mode = "default",
+      showControlPanel = mode !== "preview",
+      enableControls = mode !== "preview",
       navigationHelpElement = null,
       onProgress = null,
       onError = null,
@@ -28210,6 +29344,9 @@ class UBHD3DViewer {
     this.assetUrl = assetUrl;
     this.configFilePath = configFilePath;
     this.dracoDecoderPath = dracoDecoderPath;
+    this.mode = mode;
+    this.showControlPanel = showControlPanel;
+    this.enableControls = enableControls;
     this.navigationHelpElement = navigationHelpElement;
     this.onProgress = onProgress;
     this.onError = onError;
@@ -28230,8 +29367,10 @@ class UBHD3DViewer {
       this.model.startLoading();
       this.model.on("ready", () => {
         this.camera = new Camera2(this);
+        this.camera.setControlsEnabled(this.enableControls);
         this.lights = new Lights(this);
         this.panel = new ControlsPanel(this);
+        this.setControlPanelVisibility(this.showControlPanel);
         this.renderer = new Renderer(this);
         this.sizes.on("resize", () => {
           this.resize();
@@ -28248,8 +29387,40 @@ class UBHD3DViewer {
     this.renderer.resize();
   }
   update() {
+    this.model.update();
     this.camera.update();
     this.renderer.update();
+  }
+  setControlsEnabled(isEnabled) {
+    this.enableControls = isEnabled;
+    if (!this.camera) {
+      return this.enableControls;
+    }
+    this.enableControls = this.camera.setControlsEnabled(isEnabled);
+    return this.enableControls;
+  }
+  areControlsEnabled() {
+    if (!this.camera) {
+      return this.enableControls;
+    }
+    return this.camera.areControlsEnabled();
+  }
+  setControlPanelVisibility(isVisible) {
+    this.showControlPanel = isVisible;
+    if (!this.panel) {
+      return this.showControlPanel;
+    }
+    this.showControlPanel = this.panel.setVisible(isVisible);
+    return this.showControlPanel;
+  }
+  isControlPanelVisible() {
+    if (!this.panel) {
+      return this.showControlPanel;
+    }
+    return this.panel.isVisible();
+  }
+  toggleControlPanelVisibility() {
+    return this.setControlPanelVisibility(!this.isControlPanelVisible());
   }
   setNavigationVisibility(isVisible) {
     if (!this.navigationHelpElement) {
@@ -28257,6 +29428,56 @@ class UBHD3DViewer {
     }
     this.navigationHelpElement.hidden = !isVisible;
     this.navigationHelpElement.setAttribute("aria-hidden", `${!isVisible}`);
+  }
+  isNavigationVisible() {
+    if (!this.navigationHelpElement) {
+      return false;
+    }
+    return !this.navigationHelpElement.hidden;
+  }
+  toggleNavigationVisibility() {
+    const nextVisibility = !this.isNavigationVisible();
+    this.setNavigationVisibility(nextVisibility);
+    return nextVisibility;
+  }
+  hasAnimations() {
+    return this.model.hasAnimations();
+  }
+  getAnimationNames() {
+    return this.model.getAnimationNames();
+  }
+  getSelectedAnimation() {
+    return this.model.getSelectedAnimation();
+  }
+  setSelectedAnimation(animationName) {
+    return this.model.setSelectedAnimation(animationName);
+  }
+  playAnimation(animationName) {
+    return this.model.playAnimation(animationName);
+  }
+  playAllAnimations() {
+    return this.model.playAllAnimations();
+  }
+  pauseAnimations() {
+    return this.model.pauseAnimations();
+  }
+  resumeAnimations() {
+    return this.model.resumeAnimations();
+  }
+  toggleAnimations() {
+    return this.model.toggleAnimations();
+  }
+  stopAnimations() {
+    return this.model.stopAllAnimations();
+  }
+  isAnimationPlaying() {
+    return this.model.isAnimationPlaying();
+  }
+  setAnimationPlaybackSpeed(playbackSpeed) {
+    return this.model.setPlaybackSpeed(playbackSpeed);
+  }
+  getAnimationPlaybackSpeed() {
+    return this.model.getPlaybackSpeed();
   }
   reportError(message, error = null) {
     const details = error ? { message, error } : { message };
@@ -28299,7 +29520,10 @@ class UBHD3DViewer {
     }
   }
 }
-function createViewerUi(root = document.body) {
+function createViewerUi(root = document.body, options = {}) {
+  const {
+    showNavigationHelp = true
+  } = options;
   const progressElement = document.createElement("div");
   progressElement.id = "ubhd-3d-progress";
   progressElement.className = "ubhd-progress";
@@ -28321,7 +29545,8 @@ function createViewerUi(root = document.body) {
   legendElement.className = "ubhd-legend size-medium";
   legendElement.id = "ubhd-3d-navigation";
   legendElement.setAttribute("aria-label", "Navigation help");
-  legendElement.setAttribute("aria-hidden", "false");
+  legendElement.hidden = !showNavigationHelp;
+  legendElement.setAttribute("aria-hidden", `${!showNavigationHelp}`);
   const legendTitleElement = document.createElement("div");
   legendTitleElement.className = "legend-title";
   legendTitleElement.textContent = "Navigation";
@@ -28351,6 +29576,19 @@ function createViewerUi(root = document.body) {
     legendElement
   };
 }
+function normalizeViewerMode(mode = null) {
+  return mode === "preview" ? "preview" : "default";
+}
+function resolvePresentationOptions(options = {}) {
+  const mode = normalizeViewerMode(options.mode);
+  const isPreviewMode = mode === "preview";
+  return {
+    mode,
+    showNavigationHelp: options.showNavigationHelp ?? !isPreviewMode,
+    showControlPanel: options.showControlPanel ?? !isPreviewMode,
+    enableControls: options.enableControls ?? !isPreviewMode
+  };
+}
 function initEmbeddedUBHD3DViewer(options = {}) {
   const {
     canvas = document.querySelector("canvas.webgl"),
@@ -28358,12 +29596,24 @@ function initEmbeddedUBHD3DViewer(options = {}) {
     configFilePath = null,
     dracoDecoderPath = "/draco/",
     root = document.body,
+    mode = null,
+    showNavigationHelp = void 0,
+    showControlPanel = void 0,
+    enableControls = void 0,
     missingAssetMessage = "Missing asset URL.",
     onProgress = null,
     onError = null,
     onReady = null
   } = options;
-  const { progressElement, progressBarElement, errorElement, legendElement } = createViewerUi(root);
+  const presentationOptions = resolvePresentationOptions({
+    mode,
+    showNavigationHelp,
+    showControlPanel,
+    enableControls
+  });
+  const { progressElement, progressBarElement, errorElement, legendElement } = createViewerUi(root, {
+    showNavigationHelp: presentationOptions.showNavigationHelp
+  });
   if (!assetUrl) {
     progressElement.style.display = "none";
     errorElement.innerText = missingAssetMessage;
@@ -28378,6 +29628,9 @@ function initEmbeddedUBHD3DViewer(options = {}) {
     assetUrl,
     configFilePath,
     dracoDecoderPath,
+    mode: presentationOptions.mode,
+    showControlPanel: presentationOptions.showControlPanel,
+    enableControls: presentationOptions.enableControls,
     navigationHelpElement: legendElement,
     onProgress: ({ loaded, total, percent }) => {
       progressElement.style.display = "block";
@@ -28411,6 +29664,7 @@ function initEmbeddedUBHD3DViewer(options = {}) {
   });
 }
 function initUBHD3DViewer(options = {}) {
+  var _a;
   const {
     search = window.location.search,
     canvasSelector = "canvas.webgl",
@@ -28419,11 +29673,13 @@ function initUBHD3DViewer(options = {}) {
   const params = new URLSearchParams(search);
   const assetUrl = params.get("asset");
   const configFilePath = params.get("config");
+  const mode = ((_a = params.get("mode")) == null ? void 0 : _a.toLowerCase()) || null;
   const canvas = document.querySelector(canvasSelector);
   return initEmbeddedUBHD3DViewer({
     canvas,
     assetUrl,
     configFilePath,
+    mode,
     missingAssetMessage
   });
 }
