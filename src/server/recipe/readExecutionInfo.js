@@ -1,5 +1,7 @@
 const fs = require('fs')
 
+// Liest den FAS-Info-Payload entweder aus einer Datei oder direkt aus dem CLI-Argument.
+// So koennen alle Rezeptskripte dieselben Metadaten unabhaengig von der Aufrufart verwenden.
 function readExecutionInfo(infoArg) {
 	if (!infoArg) {
 		throw new Error('Missing info.json payload')

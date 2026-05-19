@@ -6,6 +6,8 @@ const path = require('path')
 const { spawn } = require('child_process')
 const { readExecutionInfo } = require('./readExecutionInfo')
 
+// Wandelt ein glTF-Modell ueber gltf-transform in ein GLB fuer die Folgeschritte um.
+// Die Funktion kuemmert sich um CLI-Aufruf, Zielverzeichnis und Ergebnispruefung.
 async function main() {
 	const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
 
@@ -31,6 +33,8 @@ async function main() {
 	console.error(`[gltf2glb] Converted ${sourceName} -> ${outputFile}`)
 }
 
+// Prueft, ob eine benoetigte Datei vorhanden und fuer den Prozess lesbar ist.
+// Dadurch werden Fehler beim spaeteren CLI-Aufruf frueh und eindeutig abgefangen.
 function ensureReadableFile(filePath, label) {
 	if (!fs.existsSync(filePath)) {
 		throw new Error(`Missing ${label}: ${filePath}`)
@@ -39,6 +43,8 @@ function ensureReadableFile(filePath, label) {
 	fs.accessSync(filePath, fs.constants.R_OK)
 }
 
+// Ermittelt, wie die gltf-transform-CLI im aktuellen Deployment gestartet werden kann.
+// Direkte Ausfuehrung wird bevorzugt und faellt sonst auf `node cli.js` zurueck.
 async function getCliInvocation(cliPath) {
 	ensureReadableFile(cliPath, 'gltf-transform CLI')
 
@@ -50,6 +56,8 @@ async function getCliInvocation(cliPath) {
 	}
 }
 
+// Fuehrt einen externen Konvertierungsprozess aus und reicht dessen Logs direkt durch.
+// Ein Exit-Code ungleich null wird sofort als Rezeptfehler an den Aufrufer gemeldet.
 function runCommand(command, args) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {

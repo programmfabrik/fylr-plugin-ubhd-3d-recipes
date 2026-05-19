@@ -1,29 +1,12 @@
 # UBHD 3D Recipes
 
-Dieses Plugin stellt FYLR/FAS-Rezepte bereit, um 3D-Uploads in webtaugliche Derivate fuer den UBHD-Viewer umzuwandeln.
+Aktuelle Projektdokumentation liegt in [docs/README.md](docs/README.md).
 
-Aktuell werden fuer `vector3d` zwei Versionen erzeugt:
+Dieses README dient nur als Einstiegspunkt. Historische oder verworfene Entwuerfe unter `old-docs/` sind kein Teil der aktiven Dokumentation.
 
-- `viewer`: abgeleitetes Viewer-Modell
-- `small`: Preview auf Basis von `viewer`
+## Kompakte Dokumentationspfade
 
-Unterstuetzte Upload-Formate sind `glb`, `gltf` und `obj`.
-
-## Build
-
-Das Plugin benoetigt die gebaute Viewer-App aus dem Nachbar-Plugin `../fylr-plugin-ubhd-3d-viewer`, weil deren `dist` fuer die Preview-Erzeugung in dieses Plugin gespiegelt wird.
-
-```bash
-make -C ../fylr-plugin-ubhd-3d-viewer build
-make build
-```
-
-`make build` installiert die Node-Abhaengigkeiten, synchronisiert die benoetigten Viewer-Assets nach `src/server/recipe/viewer-dist/` und erzeugt das Plugin unter `build/ubhd-3d-recipes/`.
-
-Fuer ein installierbares Paket:
-
-```bash
-make zip
-```
-
-Das ZIP liegt danach unter `build/ubhd-3d-recipes.zip`.
+- [docs/01-ueberblick.md](docs/01-ueberblick.md) fuer Zweck, Abgrenzung und typische Einsatzfaelle
+- [docs/02-installation-und-betrieb.md](docs/02-installation-und-betrieb.md) fuer Setup, Deployment, Betrieb und erste Fehleranalyse
+- [docs/03-konfiguration.md](docs/03-konfiguration.md) fuer Manifest, FAS-Konfiguration und Umgebungswerte
+- [docs/04-rezepte-und-pipeline.md](docs/04-rezepte-und-pipeline.md) fuer Rezeptlogik, Ablauf und Entwicklungserweiterungen

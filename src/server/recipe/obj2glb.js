@@ -5,6 +5,8 @@ const path = require('path')
 const obj2gltf = require('obj2gltf')
 const { readExecutionInfo } = require('./readExecutionInfo')
 
+// Konvertiert eine OBJ-Datei in ein einzelnes GLB fuer die weitere Viewer-Pipeline.
+// Dabei werden Ausgabeordner, Achsorientierung und die abschliessende Protokollierung gesetzt.
 async function main() {
 	const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
 
@@ -32,6 +34,8 @@ async function main() {
 	console.error(`[obj2glb] Converted ${sourceName} -> ${outputFile}`)
 }
 
+// Prueft frueh, ob die erwartete Eingabedatei vorhanden und lesbar ist.
+// So bricht die Konvertierung mit einer klaren Meldung statt in der Bibliothek ab.
 function ensureReadableFile(filePath, label) {
 	if (!fs.existsSync(filePath)) {
 		throw new Error(`Missing ${label}: ${filePath}`)

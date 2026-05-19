@@ -10,6 +10,8 @@ const GLB_MAGIC = 0x46546c67
 const GLB_JSON_CHUNK_TYPE = 0x4e4f534a
 const DRACO_EXTENSION_NAME = 'KHR_draco_mesh_compression'
 
+// Komprimiert ein GLB nach Moeglichkeit mit Draco und faellt sonst auf das Original zurueck.
+// Akzeptiert wird nur eine Ausgabe, die gueltig ist und einen sinnvollen Groessenvorteil bringt.
 async function main() {
 	const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
 
@@ -64,6 +66,8 @@ async function main() {
 	console.error(`[glb2draco] ${inputStat.size} -> ${outputStat.size} bytes`)
 }
 
+// Prueft frueh, ob die Eingabedatei vorhanden und fuer den Prozess lesbar ist.
+// So werden spaetere Fehler im CLI-Aufruf oder beim GLB-Parsing vermieden.
 function ensureReadableFile(filePath, label) {
 	if (!fs.existsSync(filePath)) {
 		throw new Error(`Missing ${label}: ${filePath}`)
@@ -72,6 +76,8 @@ function ensureReadableFile(filePath, label) {
 	fs.accessSync(filePath, fs.constants.R_OK)
 }
 
+// Ermittelt, wie die gltf-transform-CLI in der aktuellen Umgebung gestartet werden soll.
+// Wenn die Datei nicht direkt ausfuehrbar ist, wird auf den Node-Interpreter zurueckgefallen.
 async function getCliInvocation(cliPath) {
 	ensureReadableFile(cliPath, 'gltf-transform CLI')
 
@@ -83,6 +89,8 @@ async function getCliInvocation(cliPath) {
 	}
 }
 
+// Baut die Argumentliste fuer den Draco-CLI-Aufruf aus Pflichtwerten und optionalen Overrides.
+// Umgebungsvariablen koennen damit das Kompressionsverhalten ohne Codeaenderung anpassen.
 function buildDracoArgs(inputFile, outputFile) {
 	const args = ['draco', inputFile, outputFile, '--method', 'edgebreaker']
 	appendOption(args, '--encode-speed', process.env.UBHD_GLB2DRACO_ENCODE_SPEED)
@@ -96,6 +104,8 @@ function buildDracoArgs(inputFile, outputFile) {
 	return args
 }
 
+// Fuegt ein optionales CLI-Flag nur dann an, wenn dafuer ein sinnvoller Wert vorliegt.
+// Leere oder nicht gesetzte Variablen veraendern den Aufruf dadurch nicht.
 function appendOption(args, flag, value) {
 	if (value === undefined || value === null || value === '') {
 		return
@@ -104,6 +114,8 @@ function appendOption(args, flag, value) {
 	args.push(flag, String(value))
 }
 
+// Liest den minimal noetigen Groessenvorteil fuer akzeptierte Draco-Ergebnisse aus der Umgebung.
+// Der Rueckgabewert wird auf den gueltigen Bereich zwischen 0 und 1 begrenzt.
 function getMinimumSavingsRatio() {
 	const value = Number(process.env.UBHD_GLB2DRACO_MIN_SAVINGS_RATIO ?? 0)
 
@@ -114,6 +126,8 @@ function getMinimumSavingsRatio() {
 	return Math.min(Math.max(value, 0), 1)
 }
 
+// Liest nur den JSON-Chunk eines GLB ein, um Metadaten ohne Vollverarbeitung zu untersuchen.
+// Damit kann das Skript schnell erkennen, ob bereits Draco-Kompression vorhanden ist.
 async function readGlbJson(filePath) {
 	const fileHandle = await fsp.open(filePath, 'r')
 
@@ -151,6 +165,8 @@ async function readGlbJson(filePath) {
 	}
 }
 
+// Prueft das GLB-JSON auf globale und primitive Hinweise auf bestehende Draco-Kompression.
+// Ein positiver Treffer verhindert eine erneute, unnoetige Komprimierung des Modells.
 function hasDracoCompression(json) {
 	if (!json || typeof json !== 'object') {
 		return false
@@ -175,6 +191,8 @@ function hasDracoCompression(json) {
 	return false
 }
 
+// Fuehrt den externen Draco- oder gltf-transform-Prozess aus und reicht dessen Logs weiter.
+// Fehlerhafte Exit-Codes werden direkt als Rezeptfehler in die Pipeline zurueckgegeben.
 function runCommand(command, args) {
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {

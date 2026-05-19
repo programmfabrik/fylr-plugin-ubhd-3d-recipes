@@ -12,6 +12,8 @@ const DRACO_VIRTUAL_BASE = `${ROOT_PAGE_URL}draco/`
 const ASSET_VIRTUAL_BASE = `${ROOT_PAGE_URL}asset/`
 const DEFAULT_VIEWPORT = { width: 512, height: 512 }
 
+// Rendert aus einem GLB oder GLTF ueber den eingebetteten Viewer ein JPEG-Preview.
+// Die Funktion richtet Browser, virtuelle Asset-URLs und die abschliessende Ausgabepruefung ein.
 async function main() {
 	const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
 
@@ -150,6 +152,8 @@ async function main() {
 	}
 }
 
+// Sucht das benoetigte Viewer-Bundle und optionale Draco-Dateien an den bekannten Orten.
+// Die Rueckgabe beschreibt genau die Assets, die spaeter in der Preview ausgeliefert werden.
 function resolveViewerAssets() {
 	const viewerSearchRoots = [
 		path.resolve(__dirname, 'viewer-dist'),
@@ -189,6 +193,8 @@ function resolveViewerAssets() {
 	}
 }
 
+// Baut die minimale HTML-Seite, in die der Viewer fuer das Preview-Rendering geladen wird.
+// Die Seite enthaelt nur Basislayout, Canvas und Verweise auf die gefundenen Viewer-Assets.
 function buildHtml(viewerAssets) {
 	const stylesheetMarkup = viewerAssets.stylesheetName
 		? `<link rel="stylesheet" href="${VIEWER_VIRTUAL_BASE}${viewerAssets.stylesheetName}" />`
@@ -232,6 +238,8 @@ function buildHtml(viewerAssets) {
 </html>`
 }
 
+// Bedient alle Browser-Anfragen aus lokalen Dateien statt ueber einen echten Webserver.
+// So bleibt das Preview-Rendering komplett im isolierten Rezeptlauf und ohne externe Abhaengigkeiten.
 async function handleRequest(request, context) {
 	const url = request.url()
 	const method = request.method()
@@ -286,6 +294,8 @@ async function handleRequest(request, context) {
 	await request.abort().catch(() => {})
 }
 
+// Erkennt, ob eine Anfrage auf die virtuelle Startseite der Preview-Session zeigt.
+// Nur fuer diese Root-URL wird die dynamisch erzeugte HTML-Seite ausgeliefert.
 function isRootPageRequest(url) {
 	try {
 		const requestUrl = new URL(url)
@@ -296,6 +306,8 @@ function isRootPageRequest(url) {
 	}
 }
 
+// Liefert eine lokale Datei mit passendem Content-Type an die abgefangene Anfrage aus.
+// HEAD-Anfragen werden dabei korrekt ohne Body beantwortet.
 async function respondWithFile(request, filePath, contentType) {
 	const body = request.method() === 'HEAD' ? undefined : await fsp.readFile(filePath)
 	await request.respond({
@@ -308,6 +320,8 @@ async function respondWithFile(request, filePath, contentType) {
 	})
 }
 
+// Loest eine angefragte relative Datei sicher innerhalb eines erlaubten Wurzelpfads auf.
+// Damit werden Pfad-Ausbrueche per ../ verhindert, bevor Dateien ausgeliefert werden.
 function resolveWithinRoot(rootDir, relativePath) {
 	const rootPath = path.resolve(rootDir)
 	const candidatePath = path.resolve(rootPath, relativePath.replace(/^\/+/, ''))
@@ -319,6 +333,8 @@ function resolveWithinRoot(rootDir, relativePath) {
 	return null
 }
 
+// Ordnet bekannten Dateiendungen die passenden MIME-Typen fuer die Browser-Antworten zu.
+// Unbekannte Typen fallen auf einen generischen Binartyp zurueck.
 function inferMimeType(filePath) {
 	switch (path.extname(filePath).toLowerCase()) {
 		case '.css':
@@ -343,6 +359,8 @@ function inferMimeType(filePath) {
 	}
 }
 
+// Prueft frueh, ob eine benoetigte Eingabedatei vorhanden und lesbar ist.
+// Das verhindert spaetere Fehler in Browser- oder Rendering-Schritten.
 function ensureReadableFile(filePath, label) {
 	if (!fs.existsSync(filePath)) {
 		throw new Error(`Missing ${label}: ${filePath}`)
@@ -351,6 +369,8 @@ function ensureReadableFile(filePath, label) {
 	fs.accessSync(filePath, fs.constants.R_OK)
 }
 
+// Sucht ein ausfuehrbares Chromium- oder Chrome-Binary in Variablen und Standardpfaden.
+// Ohne einen gueltigen Treffer kann Puppeteer das Preview nicht rendern.
 async function resolveBrowserExecutablePath() {
 	for (const candidate of [process.env.PUPPETEER_EXECUTABLE_PATH, process.env.CHROME_BIN, '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
 		if (!candidate) {
