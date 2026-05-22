@@ -13,7 +13,7 @@ async function main() {
 	const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
 
 	if (!infoArg || !inputFile || !outputFile) {
-		throw new Error('Usage: node model2viewer.js <info-json-or-path> <source-url> <input-model> <output.glb>')
+		throw new Error('Usage: node model2viewer.js <info-json-or-path> <source-url> <input-model> <output-file>')
 	}
 
 	const info = readExecutionInfo(infoArg)
@@ -25,6 +25,13 @@ async function main() {
 	const normalizedSourceUrl = sourceUrl || ''
 
 	await fsp.mkdir(path.dirname(outputPath), { recursive: true })
+
+	if (isNexusExtension(extension)) {
+		await fsp.copyFile(inputPath, outputPath)
+		await assertNonEmptyFile(outputPath, 'viewer model')
+		console.error(`[model2viewer] Forwarded Nexus viewer model ${normalizedSourceUrl || info?._source?.url || inputPath} -> ${outputPath}`)
+		return
+	}
 
 	if (extension === '.glb') {
 		await runRecipeScript('glb2draco.js', [infoArg, normalizedSourceUrl, inputPath, outputPath])
@@ -49,6 +56,10 @@ async function main() {
 	} finally {
 		await fsp.rm(tempRoot, { recursive: true, force: true })
 	}
+}
+
+function isNexusExtension(extension) {
+	return extension === '.nxs' || extension === '.nxz'
 }
 
 // Prueft frueh, ob eine benoetigte Datei existiert und fuer den Prozess lesbar ist.

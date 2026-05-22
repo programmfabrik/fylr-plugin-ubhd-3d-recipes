@@ -4,6 +4,8 @@ classes:
       - glb
       - gltf
       - obj
+      - nxs
+      - nxz
     versions:
       - displayname:
           de-DE: Viewer-Modell
@@ -21,6 +23,20 @@ classes:
         standard: false
         watermark: false
       - displayname:
+          de-DE: Viewer-Modell (Nexus)
+          en-US: Viewer model (Nexus)
+        name: viewer_nexus
+        group: derived
+        extensions:
+          - nxs
+          - nxz
+        rightsmanagement: true
+        recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:model2viewer_nexus
+        zoomable: false
+        sourceversion: ''
+        standard: false
+        watermark: false
+      - displayname:
           de-DE: Preview
           en-US: Preview
         name: small
@@ -33,5 +49,19 @@ classes:
         recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:model2preview
         zoomable: false
         sourceversion: viewer
+        standard: true
+        watermark: false
+      - displayname:
+          de-DE: Preview (Nexus)
+          en-US: Preview (Nexus)
+        name: small_nexus
+        group: preview
+        extensions:
+          - nxs
+          - nxz
+        rightsmanagement: true
+        recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:model2preview
+        zoomable: false
+        sourceversion: viewer_nexus
         standard: true
         watermark: false

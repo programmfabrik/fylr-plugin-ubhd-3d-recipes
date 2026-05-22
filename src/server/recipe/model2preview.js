@@ -11,6 +11,8 @@ const VIEWER_VIRTUAL_BASE = `${ROOT_PAGE_URL}viewer/`
 const DRACO_VIRTUAL_BASE = `${ROOT_PAGE_URL}draco/`
 const ASSET_VIRTUAL_BASE = `${ROOT_PAGE_URL}asset/`
 const DEFAULT_VIEWPORT = { width: 512, height: 512 }
+const NEXUS_EXTENSIONS = new Set(['.nxs', '.nxz'])
+const PREVIEWABLE_EXTENSIONS = new Set(['.glb', '.gltf', ...NEXUS_EXTENSIONS])
 
 // Rendert aus einem GLB oder GLTF ueber den eingebetteten Viewer ein JPEG-Preview.
 // Die Funktion richtet Browser, virtuelle Asset-URLs und die abschliessende Ausgabepruefung ein.
@@ -28,8 +30,8 @@ async function main() {
 	const outputPath = path.resolve(outputFile)
 	const extension = path.extname(inputPath).toLowerCase()
 
-	if (!['.glb', '.gltf'].includes(extension)) {
-		throw new Error('model2preview only supports glb/gltf inputs. Use a GLB sourceversion for other formats.')
+	if (!PREVIEWABLE_EXTENSIONS.has(extension)) {
+		throw new Error('model2preview only supports glb/gltf/nxs/nxz inputs.')
 	}
 
 	const viewerAssets = resolveViewerAssets()
@@ -44,6 +46,9 @@ async function main() {
 	const html = buildHtml(viewerAssets)
 	const pageUrl = new URL(ROOT_PAGE_URL)
 	pageUrl.searchParams.set('asset', assetUrl)
+	if (NEXUS_EXTENSIONS.has(extension)) {
+		pageUrl.searchParams.set('assetType', 'nexus')
+	}
 	pageUrl.searchParams.set('mode', 'preview')
 
 	const browser = await puppeteer.launch({
@@ -309,15 +314,66 @@ function isRootPageRequest(url) {
 // Liefert eine lokale Datei mit passendem Content-Type an die abgefangene Anfrage aus.
 // HEAD-Anfragen werden dabei korrekt ohne Body beantwortet.
 async function respondWithFile(request, filePath, contentType) {
-	const body = request.method() === 'HEAD' ? undefined : await fsp.readFile(filePath)
+	const stat = await fsp.stat(filePath)
+	const range = parseByteRangeHeader(request.headers()?.range, stat.size)
+	const headers = {
+		'Accept-Ranges': 'bytes',
+		'Cache-Control': 'no-store',
+		'Content-Type': contentType
+	}
+
+	if (!range) {
+		headers['Content-Length'] = String(stat.size)
+		const body = request.method() === 'HEAD' ? undefined : await fsp.readFile(filePath)
+		await request.respond({
+			status: 200,
+			headers,
+			body
+		})
+		return
+	}
+
+	const { start, end } = range
+	const contentLength = end - start + 1
+	const body = request.method() === 'HEAD' ? undefined : await readFileRange(filePath, start, contentLength)
+
+	headers['Content-Length'] = String(contentLength)
+	headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`
+
 	await request.respond({
-		status: 200,
-		headers: {
-			'Cache-Control': 'no-store',
-			'Content-Type': contentType
-		},
+		status: 206,
+		headers,
 		body
 	})
+}
+
+function parseByteRangeHeader(rangeHeader, fileSize) {
+	if (!rangeHeader || !/^bytes=\d+-\d*$/.test(rangeHeader)) {
+		return null
+	}
+
+	const [, startText, endText] = /^bytes=(\d+)-(\d*)$/.exec(rangeHeader) || []
+	const start = Number(startText)
+	const requestedEnd = endText ? Number(endText) : fileSize - 1
+	const end = Math.min(requestedEnd, fileSize - 1)
+
+	if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start > end || start >= fileSize) {
+		return null
+	}
+
+	return { start, end }
+}
+
+async function readFileRange(filePath, start, length) {
+	const handle = await fsp.open(filePath, 'r')
+
+	try {
+		const buffer = Buffer.allocUnsafe(length)
+		const { bytesRead } = await handle.read(buffer, 0, length, start)
+		return bytesRead === length ? buffer : buffer.subarray(0, bytesRead)
+	} finally {
+		await handle.close()
+	}
 }
 
 // Loest eine angefragte relative Datei sicher innerhalb eines erlaubten Wurzelpfads auf.

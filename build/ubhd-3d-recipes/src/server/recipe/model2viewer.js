@@ -7,11 +7,13 @@ const path = require('path')
 const { spawn } = require('child_process')
 const { readExecutionInfo } = require('./readExecutionInfo')
 
+// Steuert die komplette Umwandlung eines Uploads in ein viewer-taugliches GLB.
+// Je nach Eingabeformat werden die passenden Teilschritte aufgerufen und das Ergebnis validiert.
 async function main() {
 	const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
 
 	if (!infoArg || !inputFile || !outputFile) {
-		throw new Error('Usage: node model2viewer.js <info-json-or-path> <source-url> <input-model> <output.glb>')
+		throw new Error('Usage: node model2viewer.js <info-json-or-path> <source-url> <input-model> <output-file>')
 	}
 
 	const info = readExecutionInfo(infoArg)
@@ -23,6 +25,13 @@ async function main() {
 	const normalizedSourceUrl = sourceUrl || ''
 
 	await fsp.mkdir(path.dirname(outputPath), { recursive: true })
+
+	if (isNexusExtension(extension)) {
+		await fsp.copyFile(inputPath, outputPath)
+		await assertNonEmptyFile(outputPath, 'viewer model')
+		console.error(`[model2viewer] Forwarded Nexus viewer model ${normalizedSourceUrl || info?._source?.url || inputPath} -> ${outputPath}`)
+		return
+	}
 
 	if (extension === '.glb') {
 		await runRecipeScript('glb2draco.js', [infoArg, normalizedSourceUrl, inputPath, outputPath])
@@ -49,6 +58,12 @@ async function main() {
 	}
 }
 
+function isNexusExtension(extension) {
+	return extension === '.nxs' || extension === '.nxz'
+}
+
+// Prueft frueh, ob eine benoetigte Datei existiert und fuer den Prozess lesbar ist.
+// So werden Folgefehler spaeter in der Pipeline auf einen klaren Einstiegspunkt reduziert.
 function ensureReadableFile(filePath, label) {
 	if (!fs.existsSync(filePath)) {
 		throw new Error(`Missing ${label}: ${filePath}`)
@@ -57,6 +72,8 @@ function ensureReadableFile(filePath, label) {
 	fs.accessSync(filePath, fs.constants.R_OK)
 }
 
+// Stellt sicher, dass ein erzeugtes Artefakt nicht nur existiert, sondern auch Inhalt hat.
+// Leere Ausgabedateien werden damit sofort als Fehler der Konvertierung erkannt.
 async function assertNonEmptyFile(filePath, label) {
 	const stat = await fsp.stat(filePath)
 
@@ -65,6 +82,8 @@ async function assertNonEmptyFile(filePath, label) {
 	}
 }
 
+// Startet ein Nachbarskript der Rezeptkette als eigenen Node-Prozess.
+// Standardausgabe und Fehlerausgabe werden durchgereicht, damit FAS die Logs komplett sieht.
 function runRecipeScript(scriptName, args) {
 	return new Promise((resolve, reject) => {
 		const scriptPath = path.resolve(__dirname, scriptName)
