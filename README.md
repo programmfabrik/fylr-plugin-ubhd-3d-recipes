@@ -1,2 +1,2 @@
-# fylr-template-plugins
-A template repository for fylr plugins.
+# fylr-plugin-ubhd-3d-recipes
+
