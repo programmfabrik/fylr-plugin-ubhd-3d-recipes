@@ -5,51 +5,72 @@ const path = require('path')
 const obj2gltf = require('obj2gltf')
 const { readExecutionInfo } = require('./readExecutionInfo')
 
-// Konvertiert eine OBJ-Datei in ein einzelnes GLB fuer die weitere Viewer-Pipeline.
-// Dabei werden Ausgabeordner, Achsorientierung und die abschliessende Protokollierung gesetzt.
+
+/**
+ * Einstiegspunkt.
+ * Konvertiert eine OBJ Datei in eine GLB Datei. (binäres GLTF).
+ * 
+ * Liest folgende Argumente von der Kommandozeile:
+ * 
+ * @param {string} infoArg - Pfad zu einer JSON-Datei mit Metadaten (oder direkt JSON-String)
+ * @param {string} sourceUrl - URL der Quelle (optional, wird nur für Logging verwendet)
+ * @param {string} inputFile - Pfad zur Eingabe-OBJ-Datei
+ * @param {string} outputFile - Pfad zur Ausgabedatei (GLB)    
+ */
 async function main() {
-	const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
+    const [, , infoArg, sourceUrl, inputFile, outputFile] = process.argv
 
-	if (!infoArg || !inputFile || !outputFile) {
-		throw new Error('Usage: node obj2glb.js <info-json-or-path> <source-url> <input.obj> <output.glb>')
-	}
+    if (!infoArg || !inputFile || !outputFile) {
+        throw new Error('Usage: node obj2glb.js <info-json-or-path> <source-url> <input.obj> <output.glb>')
+    }
 
-	const info = readExecutionInfo(infoArg)
-	ensureReadableFile(inputFile, 'input OBJ')
-	const outputDirectory = path.dirname(outputFile)
+    // Metadaten laden (aus Datei oder direktem JSON-String)
+    const info = readExecutionInfo(infoArg)
 
-	fs.mkdirSync(outputDirectory, { recursive: true })
+    // Sicherstellen, dass die Eingabedatei existiert und lesbar ist
+    ensureReadableFile(inputFile, 'input OBJ')
 
-	const glb = await obj2gltf(inputFile, {
-		binary: true,
-		separate: false,
-		secure: true,
-		inputUpAxis: 'Z',
-		outputUpAxis: 'Y'
-	})
+    // Zielverzeichnis anlegen, falls es noch nicht existiert
+    const outputDirectory = path.dirname(outputFile)
+    fs.mkdirSync(outputDirectory, { recursive: true })
 
-	fs.writeFileSync(outputFile, glb)
+    // Konvertierung durchführen: Z-up (OBJ-Konvention) -> Y-up (glTF-Konvention)
+    const glb = await obj2gltf(inputFile, {
+        binary: true,
+        separate: false,
+        secure: true,
+        inputUpAxis: 'Z',
+        outputUpAxis: 'Y'
+    })
+    // Ausgabedatei schreiben
+    fs.writeFileSync(outputFile, glb)
 
-	const sourceName = sourceUrl || info?._source?.url || inputFile
-	console.error(`[obj2glb] Converted ${sourceName} -> ${outputFile}`)
+    // Für Logging den Namen der Quelle bestimmen (entweder URL, Metadaten oder Eingabedatei)
+    const sourceName = sourceUrl || info?._source?.url || inputFile
+    console.error(`[obj2glb] Converted ${sourceName} -> ${outputFile}`)
 }
 
-// Prueft frueh, ob die erwartete Eingabedatei vorhanden und lesbar ist.
-// So bricht die Konvertierung mit einer klaren Meldung statt in der Bibliothek ab.
+/**
+ * Prüft, ob eine benötigte Datei vorhanden und für den Prozess lesbar ist.
+ * Dadurch werden Fehler beim späteren CLI-Aufruf früh und eindeutig abgefangen.
+ * @param {string} filePath - Pfad zur Datei, die überprüft werden soll
+ * @param {string} label - Bezeichnung der Datei für die Fehlermeldung
+ */
 function ensureReadableFile(filePath, label) {
-	if (!fs.existsSync(filePath)) {
-		throw new Error(`Missing ${label}: ${filePath}`)
-	}
+    if (!fs.existsSync(filePath)) {
+        throw new Error(`Missing ${label}: ${filePath}`)
+    }
 
-	fs.accessSync(filePath, fs.constants.R_OK)
+    fs.accessSync(filePath, fs.constants.R_OK)
 }
 
+// main() aufrufen und Fehler abfangen, um eine saubere Fehlermeldung auszugeben
 main().catch((error) => {
-	console.error(`[obj2glb] ${error.message}`)
+    console.error(`[obj2glb] ${error.message}`)
 
-	if (error.stack) {
-		console.error(error.stack)
-	}
+    if (error.stack) {
+        console.error(error.stack)
+    }
 
-	process.exit(1)
+    process.exit(1)
 })
