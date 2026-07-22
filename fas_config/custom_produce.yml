@@ -1,3 +1,13 @@
+custommetadata:
+  - recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:model_technical_metadata
+    extensions:
+      - glb
+      - gltf
+      - obj
+      - nxs
+      - nxz
+    includeversions: false
+
 classes:
   vector3d:
     uploadenabledextensions:

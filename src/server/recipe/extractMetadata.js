@@ -1,35 +1,45 @@
 const fs = require('fs');
+const path = require('path');
 
-const { execSync } = require('child_process')
+const inputFile = process.argv[2];
+const outputFile = process.argv[3];
 
-console.error("Extract metadata failed.")
-console.error("process.argv[0]." + process.argv[0])
-console.error("process.argv[1]." + process.argv[1])
-console.error("process.argv[2]." + process.argv[2])
+console.error("extractMetadata.js: input:", inputFile);
+console.error("extractMetadata.js: output:", outputFile);
+
+function readGltfJson(file) {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.glb') {
+    // GLB binary format: JSON chunk starts at byte 20
+    const buf = fs.readFileSync(file);
+    const magic = buf.readUInt32LE(0);
+    if (magic !== 0x46546C67) throw new Error('Not a valid GLB file');
+    const jsonChunkLength = buf.readUInt32LE(12);
+    const jsonChunkType  = buf.readUInt32LE(16);
+    if (jsonChunkType !== 0x4E4F534A) throw new Error('First GLB chunk is not JSON');
+    return JSON.parse(buf.slice(20, 20 + jsonChunkLength).toString('utf8'));
+  } else {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  }
+}
 
 function inspect(file) {
   try {
-    const output = execSync(`gltf-transform inspect ${file} | grep KHR_draco`, { encoding: 'utf-8' });
-    return {
-            "compressed": true
-        };
-  } catch (error) {
-    if (error.status === 1) {
-      console.log('KHR_draco extension not found.');
-      return {
-            "compressed": false
-        };
-    } else {
-      console.error('An error occured:', error.message);
-    }
-}}
-
-const metadata = {
-    "_technical_metadata": {
-        "UBHD_3D_Recipes": inspect(process.argv[2])
-    }
+    const gltf = readGltfJson(file);
+    const extensions = gltf.extensionsUsed || [];
+    const dracoCompressed = extensions.includes('KHR_draco_mesh_compression');
+    console.error("extensionsUsed:", extensions);
+    return { draco_compressed: dracoCompressed };
+  } catch (err) {
+    console.error('Error inspecting file:', err.message);
+    return { draco_compressed: null, error: err.message };
+  }
 }
 
-fs.writeFileSync(process.argv[3], JSON.stringify(metadata))
+const metadata = {
+  "_technical_metadata": {
+    "UBHD_3D_Recipes": inspect(inputFile)
+  }
+};
 
-// fs.writeFileSync(process.argv[2], fs.readFileSync(process.argv[1], 'utf8').replaceAll('_custom_', '%custom%'));
+fs.writeFileSync(outputFile, JSON.stringify(metadata));
