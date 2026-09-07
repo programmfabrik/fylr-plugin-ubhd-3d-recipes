@@ -27,7 +27,11 @@ function inspect(file) {
   try {
     const gltf = readGltfJson(file);
     const extensions = gltf.extensionsUsed || [];
-    const dracoCompressed = extensions.includes('KHR_draco_mesh_compression');
+    // const dracoCompressed = extensions.includes('KHR_draco_mesh_compression');
+    let dracoCompressed = null;
+    if (extensions.includes('KHR_draco_mesh_compression')) {
+      dracoCompressed = 1;
+    }
     console.error("extensionsUsed:", extensions);
     return { draco_compressed: dracoCompressed };
   } catch (err) {
@@ -38,7 +42,7 @@ function inspect(file) {
 
 const metadata = {
   "_technical_metadata": {
-    "UBHD_3D_Recipes": inspect(inputFile)
+    "UBHD_3D_GLB_COMPRESSED": inspect(inputFile)
   }
 };
 

@@ -24677,7 +24677,6 @@ class Model extends EventEmitter {
     this.viewer = viewer;
     this.canvas = this.viewer.canvas;
     this.assetUrl = this.viewer.assetUrl;
-    this.assetType = this.viewer.assetType ? this.viewer.assetType.toLowerCase() : null;
     this.scene = this.viewer.scene;
     this.size = {};
     this.animationMixer = null;
@@ -24767,9 +24766,6 @@ class Model extends EventEmitter {
   }
   isNexusAsset() {
     var _a, _b;
-    if (this.assetType === "nexus") {
-      return true;
-    }
     const assetPath = (_b = (_a = this.assetUrl) == null ? void 0 : _a.split(/[?#]/, 1)[0]) == null ? void 0 : _b.toLowerCase();
     return (assetPath == null ? void 0 : assetPath.endsWith(".nxs")) || (assetPath == null ? void 0 : assetPath.endsWith(".nxz"));
   }
@@ -27760,7 +27756,6 @@ class UBHD3DViewer {
     const {
       canvas = null,
       assetUrl = null,
-      assetType = null,
       configFilePath = null,
       dracoDecoderPath = "/draco/",
       mode = "default",
@@ -27774,7 +27769,6 @@ class UBHD3DViewer {
     } = options;
     this.canvas = canvas;
     this.assetUrl = assetUrl;
-    this.assetType = assetType;
     this.configFilePath = configFilePath;
     this.dracoDecoderPath = dracoDecoderPath;
     this.mode = mode;
@@ -27914,11 +27908,10 @@ class UBHD3DViewer {
   }
   reportError(message, error = null) {
     const details = error ? { message, error } : { message };
+    console.error("[UBHD3DViewer]", message, error ? error.stack || error.message || String(error) : "");
     if (typeof this.onError === "function") {
       this.onError(details);
-      return;
     }
-    console.error("[UBHD3DViewer]", message, error || "");
   }
   reportProgress(loaded, total = null) {
     if (typeof this.onProgress !== "function") {
@@ -28026,7 +28019,6 @@ function initEmbeddedUBHD3DViewer(options = {}) {
   const {
     canvas = document.querySelector("canvas.webgl"),
     assetUrl = null,
-    assetType = null,
     configFilePath = null,
     dracoDecoderPath = "/draco/",
     root = document.body,
@@ -28061,7 +28053,6 @@ function initEmbeddedUBHD3DViewer(options = {}) {
   return new UBHD3DViewer({
     canvas,
     assetUrl,
-    assetType,
     configFilePath,
     dracoDecoderPath,
     mode: presentationOptions.mode,
@@ -28104,7 +28095,7 @@ function initEmbeddedUBHD3DViewer(options = {}) {
   });
 }
 function initUBHD3DViewer(options = {}) {
-  var _a, _b;
+  var _a;
   const {
     search = window.location.search,
     canvasSelector = "canvas.webgl",
@@ -28112,14 +28103,12 @@ function initUBHD3DViewer(options = {}) {
   } = options;
   const params = new URLSearchParams(search);
   const assetUrl = params.get("asset");
-  const assetType = ((_a = params.get("assetType")) == null ? void 0 : _a.toLowerCase()) || null;
   const configFilePath = params.get("config");
-  const mode = ((_b = params.get("mode")) == null ? void 0 : _b.toLowerCase()) || null;
+  const mode = ((_a = params.get("mode")) == null ? void 0 : _a.toLowerCase()) || null;
   const canvas = document.querySelector(canvasSelector);
   return initEmbeddedUBHD3DViewer({
     canvas,
     assetUrl,
-    assetType,
     configFilePath,
     mode,
     missingAssetMessage

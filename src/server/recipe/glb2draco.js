@@ -52,56 +52,47 @@ async function main() {
     await fsp.mkdir(path.dirname(outputFile), { recursive: true })
 
     // Eingabedatei einlesen: Dateigröße (für den späteren Vergleich)
-    // und den JSON-Chunk der GLB (um zu prüfen, ob sie bereits Draco nutzt)
     const inputStat = await fsp.stat(inputFile)
-    const inputJson = await readGlbJson(inputFile)
 
     // Für Logging den Namen der Quelle bestimmen:
     // bevorzugt die übergebene URL, sonst aus den Metadaten, sonst der Dateipfad als Fallback
     const sourceName = sourceUrl || info?._source?.url || inputFile
 
-    // Fall 1: Eingabedatei nutzt bereits Draco-Kompression
-    // -> keine erneute Kompression nötig, einfach 1:1 kopieren
-    if (hasDracoCompression(inputJson)) {
-        await fsp.copyFile(inputFile, outputFile)
-        console.error(`[glb2draco] Skipped ${sourceName}, input already uses ${DRACO_EXTENSION_NAME}`)
-    } else {
-        // Fall 2: Noch nicht komprimiert -> Kompression versuchen
+    // Kompression versuchen (ob bereits Draco-komprimiert wird durch extractMetadata.js geprüft)
 
-        // Temporäres Verzeichnis anlegen, damit wir die komprimierte Version erst
-        // testen können, bevor wir irgendetwas an der finalen Ausgabedatei ändern.
-        // mkdtemp fügt automatisch ein zufälliges Suffix an den Präfix an,
-        // damit parallele Läufe sich nicht in die Quere kommen.
-        const tempDir = await fsp.mkdtemp(path.join(path.dirname(outputFile), 'glb2draco-'))
-        const tempOutputFile = path.join(tempDir, 'model.draco.glb')
+    // Temporäres Verzeichnis anlegen, damit wir die komprimierte Version erst
+    // testen können, bevor wir irgendetwas an der finalen Ausgabedatei ändern.
+    // mkdtemp fügt automatisch ein zufälliges Suffix an den Präfix an,
+    // damit parallele Läufe sich nicht in die Quere kommen.
+    const tempDir = await fsp.mkdtemp(path.join(path.dirname(outputFile), 'glb2draco-'))
+    const tempOutputFile = path.join(tempDir, 'model.draco.glb')
 
-        try {
-            // gltf-transform CLI mit Draco-Kompressionsargumenten aufrufen
-            // (Ergebnis landet zunächst nur im temporären Verzeichnis)
-            const args = buildDracoArgs(path.resolve(inputFile), path.resolve(tempOutputFile))
-            await runCommand(invocation.command, [...invocation.prefixArgs, ...args])
+    try {
+        // gltf-transform CLI mit Draco-Kompressionsargumenten aufrufen
+        // (Ergebnis landet zunächst nur im temporären Verzeichnis)
+        const args = buildDracoArgs(path.resolve(inputFile), path.resolve(tempOutputFile))
+        await runCommand(invocation.command, [...invocation.prefixArgs, ...args])
 
-            // Größe des komprimierten Ergebnisses ermitteln und mit dem Original vergleichen
-            const compressedStat = await fsp.stat(tempOutputFile)
-            const savingsRatio = inputStat.size > 0 ? (inputStat.size - compressedStat.size) / inputStat.size : 0
+        // Größe des komprimierten Ergebnisses ermitteln und mit dem Original vergleichen
+        const compressedStat = await fsp.stat(tempOutputFile)
+        const savingsRatio = inputStat.size > 0 ? (inputStat.size - compressedStat.size) / inputStat.size : 0
 
-            // Kompression nur übernehmen, wenn sie tatsächlich kleiner ist
-            // UND der Größenvorteil die Mindestschwelle erreicht.
-            // (Bei sehr kleinen oder schon optimierten Dateien kann Draco die Größe
-            // sogar erhöhen, deshalb die zusätzliche Prüfung.)
-            if (compressedStat.size < inputStat.size && savingsRatio >= minimumSavingsRatio) {
-                await fsp.copyFile(tempOutputFile, outputFile)
-                console.error(`[glb2draco] Accepted compressed output for ${sourceName}`)
-            } else {
-                // Kompression hat sich nicht gelohnt -> Original unverändert übernehmen
-                await fsp.copyFile(inputFile, outputFile)
-                console.error(`[glb2draco] Skipped compression for ${sourceName}, savings were not beneficial`)
-            }
-        } finally {
-            // Temporäres Verzeichnis in jedem Fall aufräumen, egal ob die Kompression
-            // erfolgreich war oder ein Fehler geworfen wurde
-            await fsp.rm(tempDir, { recursive: true, force: true })
+        // Kompression nur übernehmen, wenn sie tatsächlich kleiner ist
+        // UND der Größenvorteil die Mindestschwelle erreicht.
+        // (Bei sehr kleinen oder schon optimierten Dateien kann Draco die Größe
+        // sogar erhöhen, deshalb die zusätzliche Prüfung.)
+        if (compressedStat.size < inputStat.size && savingsRatio >= minimumSavingsRatio) {
+            await fsp.copyFile(tempOutputFile, outputFile)
+            console.error(`[glb2draco] Accepted compressed output for ${sourceName}`)
+        } else {
+            // Kompression hat sich nicht gelohnt -> Original unverändert übernehmen
+            await fsp.copyFile(inputFile, outputFile)
+            console.error(`[glb2draco] Skipped compression for ${sourceName}, savings were not beneficial`)
         }
+    } finally {
+        // Temporäres Verzeichnis in jedem Fall aufräumen, egal ob die Kompression
+        // erfolgreich war oder ein Fehler geworfen wurde
+        await fsp.rm(tempDir, { recursive: true, force: true })
     }
 
     // Abschließende Prüfung: fertige Ausgabedatei darf nicht leer sein

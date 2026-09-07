@@ -1,5 +1,48 @@
 name: cookbook_ubhd_3d
 recipes:
+  # example:
+  #   class: _metadata
+  #   metadata:
+  #     - file: "example_metadata.json"
+  #   params:
+  #     custom:
+  #       type: string
+  #   execs:
+  #     - service: node
+  #       commands:
+  #         - prog: node
+  #           args:
+  #             - "-e"
+  #             # read custom_metadata.json (arg 1) and write to example_metadata.json (arg 2)
+  #             - "console.error('Current working directory:', process.cwd()); const fs = require('fs'); fs.writeFileSync(process.argv[2], fs.readFileSync(process.argv[1], 'utf8').replaceAll('_custom_', '%custom%'));"
+  #             - "%_exec.pluginDir%/fas_config/custom_metadata.json"
+  #             - type: file_out
+  #               file:
+  #                 name: "example_metadata.json"
+  model_technical_metadata:
+    class: _metadata
+    extensions:
+      - glb
+      - gltf
+      - obj
+      - nxs
+      - nxz
+    description: extract technical metadata from 3D models (Draco compression status)
+    metadata:
+      - file: "technical_metadata.json"
+    execs:
+      - service: node
+        commands:
+          - prog: node
+            args:
+              - "%_exec.pluginDir%/src/server/recipe/extractMetadata.js"
+              - type: file_in
+                file:
+                  url: "%_source.url%"
+                  name: "%_source.generatedname%"
+              - type: file_out
+                file:
+                  name: "technical_metadata.json"
   model2viewer:
     class: vector3d
     produceclass: vector3d
@@ -110,7 +153,15 @@ recipes:
       - glb
     description: compress glb with Draco
     execs:
-      - match: {}
+      - match:
+          not: 
+          - type: match
+            match:
+              any:
+                - type: int
+                  intrange:
+                    min: 1
+                  value: "%_source.technical_metadata.UBHD_3D_GLB_COMPRESSED.draco_compressed%"
         service: node
         timeoutSec: 0
         extension: "glb"

@@ -153,7 +153,15 @@ recipes:
       - glb
     description: compress glb with Draco
     execs:
-      - match: {}
+      - match:
+          not: 
+          - type: match
+            match:
+              any:
+                - type: int
+                  intrange:
+                    min: 1
+                  value: "%_source.technical_metadata.UBHD_3D_GLB_COMPRESSED.draco_compressed%"
         service: node
         timeoutSec: 0
         extension: "glb"

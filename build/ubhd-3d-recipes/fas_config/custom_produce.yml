@@ -1,3 +1,13 @@
+custommetadata:
+  - recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:model_technical_metadata
+    extensions:
+      - glb
+      - gltf
+      - obj
+      - nxs
+      - nxz
+    includeversions: false
+
 classes:
   vector3d:
     uploadenabledextensions:
@@ -6,6 +16,7 @@ classes:
       - obj
       - nxs
       - nxz
+      - zip
     versions:
       - displayname:
           de-DE: Viewer-Modell
@@ -64,4 +75,28 @@ classes:
         zoomable: false
         sourceversion: viewer_nexus
         standard: true
+        watermark: false
+      - displayname:
+          de-DE: RTI-Viewer (Relight)
+          en-US: RTI Viewer (Relight)
+        name: viewer_rti
+        group: derived
+        extensions:
+          - zip
+        rightsmanagement: true
+        zoomable: false
+        sourceversion: ''
+        standard: false
+        watermark: false
+      - displayname:
+          de-DE: glTF-Bundle (entpackt)
+          en-US: glTF bundle (unpacked)
+        name: gltf
+        group: derived
+        extensions:
+          - zip
+        rightsmanagement: true
+        zoomable: false
+        sourceversion: ''
+        standard: false
         watermark: false
