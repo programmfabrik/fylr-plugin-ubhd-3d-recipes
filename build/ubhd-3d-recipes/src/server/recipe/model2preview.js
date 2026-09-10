@@ -74,9 +74,15 @@ async function main() {
 		await page.setRequestInterception(true)
 
 		const pageErrors = []
+		const consoleMessages = []
 
 		page.on('pageerror', (error) => pageErrors.push(error))
 		page.on('error', (error) => pageErrors.push(error))
+		page.on('console', (message) => {
+			if (message.type() === 'error' || message.type() === 'warning') {
+				consoleMessages.push(`[${message.type()}] ${message.text()}`)
+			}
+		})
 		page.on('request', (request) => {
 			void handleRequest(request, {
 				assetRootDir,
@@ -106,7 +112,8 @@ async function main() {
 		})
 
 		if (viewerError) {
-			throw new Error(viewerError)
+			const detail = consoleMessages.length ? `\n${consoleMessages.join('\n')}` : ''
+			throw new Error(`${viewerError}${detail}`)
 		}
 
 		await page.waitForFunction(() => {
@@ -190,6 +197,7 @@ function resolveViewerAssets() {
 		.find((candidate) => fs.existsSync(candidate))
 
 	return {
+		assetDirectory,
 		bundlePath,
 		bundleName: path.basename(bundlePath),
 		dracoDirectory,
@@ -276,6 +284,16 @@ async function handleRequest(request, context) {
 	if (context.viewerAssets.stylesheetName && url === `${VIEWER_VIRTUAL_BASE}${context.viewerAssets.stylesheetName}`) {
 		await respondWithFile(request, context.viewerAssets.stylesheetPath, 'text/css; charset=utf-8')
 		return
+	}
+
+	// Vite emits extra chunk files (GLTFLoader.js, DRACOLoader.js, meshopt_decoder.module.js, corto.worker.js, ...) that get dynamically imported relative to the main bundle.
+	if (url.startsWith(VIEWER_VIRTUAL_BASE)) {
+		const relativePath = decodeURIComponent(url.slice(VIEWER_VIRTUAL_BASE.length))
+		const localPath = resolveWithinRoot(context.viewerAssets.assetDirectory, relativePath)
+		if (localPath && fs.existsSync(localPath)) {
+			await respondWithFile(request, localPath, inferMimeType(localPath))
+			return
+		}
 	}
 
 	if (context.viewerAssets.dracoDirectory && url.startsWith(DRACO_VIRTUAL_BASE)) {

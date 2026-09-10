@@ -24697,23 +24697,32 @@ class Model extends EventEmitter {
     if (this.loaders.gltfLoader) {
       return this.loaders.gltfLoader;
     }
-    const [
-      { MeshoptDecoder },
-      { GLTFLoader },
-      { DRACOLoader }
-    ] = await Promise.all([
-      __vitePreload(() => import("./meshopt_decoder.module.js"), true ? [] : void 0, import.meta.url),
-      __vitePreload(() => import("./GLTFLoader.js"), true ? [] : void 0, import.meta.url),
-      __vitePreload(() => import("./DRACOLoader.js"), true ? [] : void 0, import.meta.url)
-    ]);
+    console.debug("[UBHD3DViewer:Model] ensureGltfLoaders: loading GLTFLoader/DRACOLoader/meshopt chunks...");
+    let MeshoptDecoder, GLTFLoader, DRACOLoader;
+    try {
+      [
+        { MeshoptDecoder },
+        { GLTFLoader },
+        { DRACOLoader }
+      ] = await Promise.all([
+        __vitePreload(() => import("./meshopt_decoder.module.js"), true ? [] : void 0, import.meta.url),
+        __vitePreload(() => import("./GLTFLoader.js"), true ? [] : void 0, import.meta.url),
+        __vitePreload(() => import("./DRACOLoader.js"), true ? [] : void 0, import.meta.url)
+      ]);
+    } catch (error) {
+      console.error("[UBHD3DViewer:Model] ensureGltfLoaders: failed to dynamically import loader chunks (check that viewer-dist/assets/*.js chunks are actually reachable).", error);
+      throw error;
+    }
     this.loaders.gltfLoader = new GLTFLoader();
     this.loaders.gltfLoader.setMeshoptDecoder(MeshoptDecoder);
     this.loaders.dracoLoader = new DRACOLoader();
     this.loaders.dracoLoader.setDecoderPath(this.viewer.dracoDecoderPath);
     this.loaders.gltfLoader.setDRACOLoader(this.loaders.dracoLoader);
+    console.debug("[UBHD3DViewer:Model] ensureGltfLoaders: loaders ready, dracoDecoderPath=", this.viewer.dracoDecoderPath);
     return this.loaders.gltfLoader;
   }
   async startLoading() {
+    console.debug("[UBHD3DViewer:Model] startLoading: assetUrl=", this.assetUrl, "isNexus=", this.isNexusAsset());
     if (this.isNexusAsset()) {
       this.startLoadingNexus();
       return;
@@ -24732,6 +24741,7 @@ class Model extends EventEmitter {
           this.viewer.reportError("An error happened while loading the asset.", error);
         }
       );
+      console.debug("[UBHD3DViewer:Model] startLoadingGltf: glTF parsed successfully.", this.assetUrl);
       this.viewer.reportProgress(1, 1);
       this.gltf = gltf;
       this.scene.add(gltf.scene);
@@ -24739,6 +24749,7 @@ class Model extends EventEmitter {
       this.setAnimations(gltf);
       this.trigger("ready");
     } catch (error) {
+      console.error("[UBHD3DViewer:Model] startLoadingGltf: failed for assetUrl=", this.assetUrl, error);
       this.viewer.reportError("Failed to load 3D asset.", error);
     }
   }
@@ -24747,6 +24758,7 @@ class Model extends EventEmitter {
       new Nexus3D(this.assetUrl, this.viewer.renderer.instance, {
         material: new MeshStandardMaterial(),
         onLoad: (nexus) => {
+          console.debug("[UBHD3DViewer:Model] startLoadingNexus: Nexus asset loaded successfully.", this.assetUrl);
           this.viewer.reportProgress(1, 1);
           this.gltf = {
             animations: [],
@@ -24761,6 +24773,7 @@ class Model extends EventEmitter {
         }
       });
     } catch (error) {
+      console.error("[UBHD3DViewer:Model] startLoadingNexus: failed for assetUrl=", this.assetUrl, error);
       this.viewer.reportError("Failed to load Nexus asset.", error);
     }
   }
@@ -27782,6 +27795,7 @@ class UBHD3DViewer {
     if (this.exposeInstance) {
       window.ubhd3dviewer = this;
     }
+    console.debug("[UBHD3DViewer] constructor: assetUrl=", this.assetUrl, "mode=", this.mode, "configFilePath=", this.configFilePath, "dracoDecoderPath=", this.dracoDecoderPath);
     if (!this.requirementsFulfilled(this.assetUrl)) {
       return;
     } else {
@@ -27794,6 +27808,7 @@ class UBHD3DViewer {
       this.model = new Model(this);
       this.model.startLoading();
       this.model.on("ready", () => {
+        console.debug("[UBHD3DViewer] model ready, setting up camera/lights/panel.");
         this.camera = new Camera2(this);
         this.camera.setControlsEnabled(this.enableControls);
         this.lights = new Lights(this);
@@ -28042,6 +28057,7 @@ function initEmbeddedUBHD3DViewer(options = {}) {
   });
   let isLoaderSettled = false;
   if (!assetUrl) {
+    console.error("[UBHD3DViewer:init] initEmbeddedUBHD3DViewer:", missingAssetMessage);
     progressElement.style.display = "none";
     errorElement.innerText = missingAssetMessage;
     errorElement.style.display = "block";
@@ -28102,10 +28118,23 @@ function initUBHD3DViewer(options = {}) {
     missingAssetMessage = "Missing asset URL. Example: ?asset=/path/to/model.gltf"
   } = options;
   const params = new URLSearchParams(search);
-  const assetUrl = params.get("asset");
-  const configFilePath = params.get("config");
+  const accessToken = params.get("access_token");
+  const withAccessToken = (url) => {
+    if (!url || !accessToken || /[?&]access_token=/.test(url)) {
+      return url;
+    }
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`;
+  };
+  const assetUrl = withAccessToken(params.get("asset"));
+  const configFilePath = withAccessToken(params.get("config"));
   const mode = ((_a = params.get("mode")) == null ? void 0 : _a.toLowerCase()) || null;
   const canvas = document.querySelector(canvasSelector);
+  console.debug("[UBHD3DViewer:init] initUBHD3DViewer: location.search=", search);
+  console.debug("[UBHD3DViewer:init] initUBHD3DViewer: parsed asset=", params.get("asset"), "config=", params.get("config"), "mode=", mode, "access_token present=", !!accessToken, "canvas found=", !!canvas);
+  if (!canvas) {
+    console.error("[UBHD3DViewer:init] initUBHD3DViewer: canvas element not found for selector", canvasSelector);
+  }
   return initEmbeddedUBHD3DViewer({
     canvas,
     assetUrl,
@@ -28114,6 +28143,12 @@ function initUBHD3DViewer(options = {}) {
     missingAssetMessage
   });
 }
+window.addEventListener("error", (event) => {
+  console.error("[UBHD3DViewer:main] uncaught error in viewer iframe:", event.message, event.error || event);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("[UBHD3DViewer:main] unhandled promise rejection in viewer iframe:", event.reason);
+});
 initUBHD3DViewer();
 export {
   NearestMipmapLinearFilter as $,
