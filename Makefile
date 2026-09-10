@@ -1,4 +1,4 @@
-PLUGIN_NAME = ubhd-3d-recipes
+PLUGIN_NAME = fylr-plugin-ubhd-3d-recipes
 BUILD_DIR = build
 ZIP_NAME = $(PLUGIN_NAME).zip
 PACKAGE_STAGE_DIR = $(BUILD_DIR)/.package/$(PLUGIN_NAME)
