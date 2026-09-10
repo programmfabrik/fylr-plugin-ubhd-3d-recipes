@@ -1,6 +1,6 @@
 plugin:
   name: fylr-plugin-ubhd-3d-recipes
-  version: 1.2.0
+  version: 1.2.1
   url: https://github.com/programmfabrik/fylr-plugin-ubhd-3d-recipes
   l10n: l10n/ubhd-3d-recipes.csv
   displayname:
