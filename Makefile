@@ -5,6 +5,8 @@ PACKAGE_STAGE_DIR = $(BUILD_DIR)/.package/$(PLUGIN_NAME)
 VIEWER_PLUGIN_DIR = ../fylr-plugin-ubhd-3d-viewer
 VIEWER_DIST_DIR = $(VIEWER_PLUGIN_DIR)/lib/ubhd-3d-viewer/dist
 SOURCE_VIEWER_DIST_DIR = src/server/recipe/viewer-dist
+RTI_DIST_DIR = $(VIEWER_PLUGIN_DIR)/src/webfrontend/rti-dist
+SOURCE_RTI_DIST_DIR = src/server/recipe/rti-dist
 
 copy_preview_viewer_assets:
 	@if [ ! -d "$(VIEWER_DIST_DIR)/assets" ]; then \
@@ -18,9 +20,20 @@ sync_preview_viewer_assets: copy_preview_viewer_assets
 	cp -r $(VIEWER_DIST_DIR)/assets $(SOURCE_VIEWER_DIST_DIR)/
 	if [ -d $(VIEWER_DIST_DIR)/draco ]; then cp -r $(VIEWER_DIST_DIR)/draco $(SOURCE_VIEWER_DIST_DIR)/; fi
 
+copy_preview_rti_assets:
+	@if [ ! -f "$(RTI_DIST_DIR)/vendor/openlime.min.js" ]; then \
+		echo "Missing openlime bundle at $(RTI_DIST_DIR)/vendor. Run 'make -C $(VIEWER_PLUGIN_DIR) build' first." >&2; \
+		exit 1; \
+	fi
+
+sync_preview_rti_assets: copy_preview_rti_assets
+	rm -rf $(SOURCE_RTI_DIST_DIR)
+	mkdir -p $(SOURCE_RTI_DIST_DIR)/vendor
+	cp $(RTI_DIST_DIR)/vendor/openlime.min.js $(SOURCE_RTI_DIST_DIR)/vendor/openlime.min.js
+
 all: build
 
-build: clean deps sync_preview_viewer_assets
+build: clean deps sync_preview_viewer_assets sync_preview_rti_assets
 	mkdir -p $(BUILD_DIR)/$(PLUGIN_NAME)
 	if [ -d src ]; then cp -r src $(BUILD_DIR)/$(PLUGIN_NAME)/; fi
 	if [ -d l10n ]; then cp -r l10n $(BUILD_DIR)/$(PLUGIN_NAME)/; fi
@@ -36,7 +49,7 @@ deps:
 	fi
 	npm ci
 
-zip: clean deps sync_preview_viewer_assets
+zip: clean deps sync_preview_viewer_assets sync_preview_rti_assets
 	mkdir -p $(PACKAGE_STAGE_DIR)
 	cp manifest.master.yml $(PACKAGE_STAGE_DIR)/manifest.yml
 	if [ -d src ]; then cp -r src $(PACKAGE_STAGE_DIR)/; fi

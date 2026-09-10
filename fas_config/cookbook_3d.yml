@@ -205,3 +205,28 @@ recipes:
                 file:
                   url: "%_target.url%"
                   name: "output.jpg"
+  rti2preview:
+    class: vector3d
+    produceclass: image
+    extensions:
+      - zip
+    description: make a preview image from an RTI web package (info.json + plane images) inside a zip
+    execs:
+      - match: {}
+        service: node
+        timeoutSec: 0
+        extension: "jpg"
+        commands:
+          - prog: node
+            args:
+              - "%_exec.pluginDir%/src/server/recipe/rti2preview.js"
+              - "%info.json%"
+              - "%_source.url%"
+              - type: file_in
+                file:
+                  url: "%_source.url%"
+                  name: "%_source.generatedname%"
+              - type: file_out
+                file:
+                  url: "%_target.url%"
+                  name: "output.jpg"

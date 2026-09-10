@@ -89,6 +89,19 @@ classes:
         standard: false
         watermark: false
       - displayname:
+          de-DE: Preview (RTI)
+          en-US: Preview (RTI)
+        name: small_rti
+        group: preview
+        extensions:
+          - zip
+        rightsmanagement: true
+        recipename: fylr-plugin-ubhd-3d-recipes:cookbook_ubhd_3d:rti2preview
+        zoomable: false
+        sourceversion: ''
+        standard: true
+        watermark: false
+      - displayname:
           de-DE: glTF-Bundle (entpackt)
           en-US: glTF bundle (unpacked)
         name: gltf
