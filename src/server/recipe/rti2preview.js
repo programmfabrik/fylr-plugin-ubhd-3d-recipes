@@ -101,6 +101,19 @@ async function main() {
 			}
 
 			await new Promise((resolve) => setTimeout(resolve, 300))
+
+			// Erneuter fitCameraBox() unmittelbar vor dem Screenshot: die erste Anwendung in onReady
+			// kann noch vor der endgueltigen Layer-Bounding-Box laufen (Shader "ready" != Layout final),
+			// was sonst zu einem zu klein gerenderten Bild im Frame fuehrt.
+			await page.evaluate(() => {
+				try {
+					window.__viewer && window.__viewer.camera.fitCameraBox(0)
+				} catch (_error) {
+					// nicht fatal - Screenshot faellt dann auf den vorherigen Fit-Stand zurueck
+				}
+			})
+			await new Promise((resolve) => setTimeout(resolve, 150))
+
 			await fsp.mkdir(path.dirname(outputPath), { recursive: true })
 			await page.screenshot({ path: outputPath, type: 'jpeg', quality: 88 })
 
@@ -207,7 +220,10 @@ function resolveVendorDir() {
 }
 
 // Baut die minimale HTML-Seite: laedt OpenLIME, haengt das RTI-Layer ein und schaltet nach dessen
-// "ready"-Event in den Modus RTI_MODE um. Kein UIBasic/Skin noetig, da nur ein Screenshot benoetigt wird.
+// "ready"-Event in den Modus RTI_MODE um. Kein UIBasic/Skin noetig, da nur ein Screenshot benoetigt wird -
+// camera.fitCameraBox() muss deshalb hier manuell aufgerufen werden, sonst bleibt es dabei, dass
+// OpenLIME nur UIBasic per "updateSize"-Event auf die Layer-Groesse zoomt (Standardzoom ist sonst
+// viel kleiner als der Viewport, das Bild wirkt "zu klein im Rahmen").
 function buildHtml() {
 	return `<!doctype html>
 <html lang="en">
@@ -230,11 +246,22 @@ function buildHtml() {
       });
       try {
         const viewer = new OpenLIME.Viewer('.openlime');
+        window.__viewer = viewer;
+
+        // OpenLIMEs Canvas setzt canvasElement.width/height und camera.viewport erst per
+        // ResizeObserver-Callback (feuert asynchron) - im headless Single-Shot-Puppeteer-Run kann
+        // das mit dem "ready"-Event/fitCameraBox() unten in eine Race-Condition laufen, sodass die
+        // WebGL-Zeichenflaeche bei ihrer HTML-Default-Groesse (klein) bleibt, waehrend CSS den Rest
+        // des Viewports nur leer weiss auffuellt. Deshalb hier direkt und synchron erzwingen.
+        viewer.resize(window.innerWidth, window.innerHeight);
+
         const layer = new OpenLIME.Layer({ type: 'rti', url: '${ASSET_VIRTUAL_BASE}info.json', layout: 'image' });
         viewer.addLayer('rti', layer);
         const onReady = () => {
           try {
+            viewer.resize(window.innerWidth, window.innerHeight);
             layer.setMode('${RTI_MODE}');
+            viewer.camera.fitCameraBox(0);
             window.__rtiReady = true;
           } catch (error) {
             window.__rtiError = String(error && error.message || error);
